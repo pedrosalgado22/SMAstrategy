@@ -30,7 +30,7 @@ indices = {    # dictionary in Python. Each entry has a key : value:
     "shanghai": "000001.SS",
     "euro_stoxx": "^STOXX50E",
     "nifty": "^NSEI",
-    "Dow Jones": "^DJI"
+    "dow_jones": "^DJI"
 }
 
 def sma_calc(df):
