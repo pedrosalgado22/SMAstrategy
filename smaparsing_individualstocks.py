@@ -84,4 +84,4 @@ for name, ticker in companies.items(): # .items() is specifically for dictionari
 
     df = sma_calc(df)
 
-    df.to_csv(processed_data_path / f"{name}_processed.csv")
+    df.to_csv(processed_data_path / f"{name}_indprocessed.csv")
