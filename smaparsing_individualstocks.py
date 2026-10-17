@@ -3,9 +3,9 @@ import numpy as np
 from pathlib import Path
 import yfinance as yf
 
-original_data_path = Path("/home/pedrosalgado22/Documents/Github Repositories/SMAstrategy/data/raw")
+original_data_path = Path.home() / "Documents" / "Github Repositories" / "SMAstrategy" / "data" / "raw"
 
-processed_data_path = Path("/home/pedrosalgado22/Documents/Github Repositories/SMAstrategy/data/processed")
+processed_data_path = Path.home() / "Documents" / "Github Repositories" / "SMAstrategy" / "data" / "processed"
 
 
 
