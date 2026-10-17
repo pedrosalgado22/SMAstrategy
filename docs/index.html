@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SMA dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <style>
+    /* colours: light mode first, dark mode replaces them below */
+    :root {
+      color-scheme: light dark;
+      --background: #ffffff;
+      --text: #1d2125;
+      --muted: #5f6b76;
+      --line: #dde1e5;
+      --grid: #eceff1;
+      --open: #0b7a53;
+      --accent: #2f5fd0;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --background: #15181c;
+        --text: #e6e9ec;
+        --muted: #98a2ad;
+        --line: #2c3238;
+        --grid: #22272c;
+        --open: #3ecf8e;
+        --accent: #7ea2ff;
+      }
+    }
+
+    body {
+      margin: 0 auto;
+      max-width: 1100px;
+      padding: 32px 16px 64px;
+      background: var(--background);
+      color: var(--text);
+      font-family: "Source Sans 3", system-ui, sans-serif;
+      font-size: 16px;
+      line-height: 1.5;
+    }
+    h1 { font-size: 28px; margin: 0 0 4px; }
+    h2 { font-size: 20px; margin: 40px 0 12px; }
+    p { margin: 8px 0 0; }
+    .muted { color: var(--muted); }
+
+    .table-wrap { overflow-x: auto; margin-top: 24px; }
+    table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+    th, td { padding: 8px 12px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--line); }
+    th:first-child, td:first-child { text-align: left; }
+    th { font-weight: 600; color: var(--muted); }
+    tbody tr { cursor: pointer; }
+    tbody tr:hover { background: var(--grid); }
+    .open { color: var(--open); font-weight: 600; }
+    .closed { color: var(--muted); }
+
+    select {
+      font: inherit;
+      padding: 6px 10px;
+      color: var(--text);
+      background: var(--background);
+      border: 1px solid var(--line);
+      border-radius: 4px;
+    }
+    #chart { margin-top: 12px; }
+  </style>
+</head>
+<body>
+  <h1>SMA dashboard</h1>
+  <p class="muted" id="updated">Loading data...</p>
+  <p class="muted" id="skipped" hidden></p>
+
+  <div class="table-wrap">
+    <table id="table">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Last close</th>
+          <th>Date</th>
+          <th>Optimal SMA (band)</th>
+          <th>SMA value</th>
+          <th>Distance</th>
+          <th>Status</th>
+          <th>Days in status</th>
+          <th>SMA 50</th>
+          <th>SMA 100</th>
+          <th>SMA 200</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <p class="muted">
+    Open means the last close is at or below the optimal SMA, the buy rule from the backtest.
+    Closed means it is above. Click a row to show its chart.
+  </p>
+
+  <h2>Chart</h2>
+  <select id="picker" aria-label="Choose a stock or index"></select>
+  <div id="chart"></div>
+  <p class="muted">Daily closing prices. This is a personal project, not financial advice.</p>
+
+  <script>
+    const picker = document.getElementById("picker");
+    let data = null;   // everything from data.json, filled in once it has loaded
+
+
+    function format(number) {
+      // 7744.06 -> "7,744.06"
+      return number.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+
+    function addCell(row, text, className) {
+      const cell = row.insertCell();
+      cell.textContent = text;
+      if (className) {
+        cell.className = className;
+      }
+    }
+
+
+    function addRow(tbody, entry, index) {
+      const latest = entry.latest;
+      const row = tbody.insertRow();
+
+      row.onclick = function () {   // clicking a row shows its chart
+        picker.value = index;
+        drawChart();
+      };
+
+      let sign = "";
+      if (latest.distance_pct > 0) {
+        sign = "+";
+      }
+
+      addCell(row, entry.name);
+      addCell(row, format(latest.close));
+      addCell(row, latest.date);
+      addCell(row, entry.n + " (" + entry.low_n + " to " + entry.high_n + ")");
+      addCell(row, format(latest.sma_n));
+      addCell(row, sign + format(latest.distance_pct) + "%");
+      if (latest.is_open) {
+        addCell(row, "Open", "open");
+      } else {
+        addCell(row, "Closed", "closed");
+      }
+      addCell(row, latest.days_in_state);
+      addCell(row, format(latest.sma_50));
+      addCell(row, format(latest.sma_100));
+      addCell(row, format(latest.sma_200));
+    }
+
+
+    function drawChart() {
+      const entry = data.entries[picker.value];
+      const s = entry.series;
+      const style = getComputedStyle(document.documentElement);
+      const textColor = style.getPropertyValue("--text").trim();
+      const gridColor = style.getPropertyValue("--grid").trim();
+      const accent = style.getPropertyValue("--accent").trim();
+
+      const traces = [
+        // the band: an invisible lower line, then the upper line filled down to it
+        { x: s.dates, y: s.sma_low, mode: "lines", line: { width: 0 }, showlegend: false, hoverinfo: "skip" },
+        { x: s.dates, y: s.sma_high, name: "SMA " + entry.low_n + " to " + entry.high_n, mode: "lines",
+          line: { width: 0 }, fill: "tonexty", fillcolor: "rgba(80, 120, 220, 0.18)", hoverinfo: "skip" },
+
+        { x: s.dates, y: s.close, name: "Close", mode: "lines", line: { color: textColor, width: 1.5 } },
+        { x: s.dates, y: s.sma_50, name: "SMA 50", mode: "lines", line: { color: "#d4a017", width: 1.2 } },
+        { x: s.dates, y: s.sma_100, name: "SMA 100", mode: "lines", line: { color: "#2e9e4f", width: 1.2 } },
+        { x: s.dates, y: s.sma_200, name: "SMA 200", mode: "lines", line: { color: "#d64545", width: 1.2 } },
+        { x: s.dates, y: s.sma_n, name: "SMA " + entry.n + " (optimal)", mode: "lines", line: { color: accent, width: 3 } },
+
+        { x: [entry.latest.date], y: [entry.latest.close], name: "Last close", mode: "markers",
+          marker: { size: 10, color: textColor } }
+      ];
+
+      const layout = {
+        height: 520,
+        margin: { t: 48, r: 16, b: 40, l: 64 },
+        title: { text: entry.name + ": close and SMAs" },
+        paper_bgcolor: "rgba(0,0,0,0)",
+        plot_bgcolor: "rgba(0,0,0,0)",
+        font: { color: textColor, family: "Source Sans 3, system-ui, sans-serif" },
+        hovermode: "x unified",
+        legend: { orientation: "h", y: -0.15 },
+        xaxis: { gridcolor: gridColor },
+        yaxis: { gridcolor: gridColor, separatethousands: true }
+      };
+
+      Plotly.newPlot("chart", traces, layout, { responsive: true });
+    }
+
+
+    function showPage() {
+      document.getElementById("updated").textContent = "Updated " + data.updated + " from the daily closing prices.";
+
+      if (data.skipped.length > 0) {
+        const box = document.getElementById("skipped");
+        box.textContent = "Could not update: " + data.skipped.join(", ") + ".";
+        box.hidden = false;
+      }
+
+      const tbody = document.querySelector("#table tbody");
+      for (let i = 0; i < data.entries.length; i++) {
+        addRow(tbody, data.entries[i], i);
+        picker.add(new Option(data.entries[i].name, i));
+      }
+      picker.onchange = drawChart;
+      drawChart();
+    }
+
+
+    fetch("data.json", { cache: "no-store" })
+      .then(function (response) {
+        return response.json();
+      })
+      .then(function (loaded) {
+        data = loaded;
+        showPage();
+      })
+      .catch(function (error) {
+        document.getElementById("updated").textContent =
+          "Could not load the dashboard (" + error.message + "). If you opened this file directly, " +
+          "run: python -m http.server (inside the docs folder) and open http://localhost:8000.";
+      });
+  </script>
+</body>
+</html>
