@@ -1,0 +1,33 @@
+name: Update dashboard data
+
+on:
+  schedule:
+    - cron: "0 23 * * 1-5"   # Monday to Friday at 23:00 UTC, after the main markets have closed
+  workflow_dispatch:          # also lets you run it by hand from the Actions tab
+
+permissions:
+  contents: write             # the job needs this to save data.json back to the repo
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the packages
+        run: pip install -r requirements.txt
+
+      - name: Build data.json
+        run: python build_data.py
+
+      - name: Save the new data
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add docs/data.json
+          git commit -m "Update data" || echo "Nothing changed"
+          git push
