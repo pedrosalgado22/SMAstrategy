@@ -31,8 +31,8 @@
 
     body {
       margin: 0 auto;
-      max-width: 1100px;
-      padding: 32px 16px 64px;
+      max-width: 1600px;
+      padding: 32px 24px 64px;
       background: var(--background);
       color: var(--text);
       /* Apple's system font (SF Pro) on Mac, iPhone and iPad, a similar font everywhere else */
@@ -49,9 +49,10 @@
     section { margin-top: 56px; }
 
     .table-wrap { overflow-x: auto; margin-top: 12px; }
-    table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
-    th, td { padding: 8px 12px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--line); }
-    th:first-child, td:first-child { text-align: left; }
+    table { border-collapse: collapse; width: 100%; font-size: 15px; font-variant-numeric: tabular-nums; }
+    th, td { padding: 8px 10px; text-align: right; border-bottom: 1px solid var(--line); }
+    td { white-space: nowrap; }   /* numbers stay on one line, the headers may wrap onto two */
+    th:first-child, td:first-child { text-align: left; white-space: normal; }
     th { font-weight: 600; color: var(--muted); }
     tbody tr { cursor: pointer; }
     tbody tr:hover { background: var(--grid); }
@@ -70,6 +71,18 @@
     .chart { margin-top: 12px; }
 
     footer { margin-top: 64px; padding-top: 16px; border-top: 1px solid var(--line); }
+
+    /* smaller screens: hide columns step by step so the table always fits */
+    @media (max-width: 1240px) { .hide-1240 { display: none; } }
+    @media (max-width: 720px) {
+      .hide-720 { display: none; }
+      body { padding: 24px 16px 48px; }
+    }
+    @media (max-width: 480px) {
+      .hide-480 { display: none; }
+      table { font-size: 14px; }
+      th, td { padding: 6px 8px; }
+    }
   </style>
 </head>
 <body>
@@ -88,8 +101,9 @@
 
     const TABLE_HEAD =
       "<thead><tr>" +
-      "<th>Name</th><th>Last close</th><th>Date</th><th>Optimal SMA (band)</th><th>SMA value</th>" +
-      "<th>Distance</th><th>Status</th><th>Days in status</th><th>SMA 50</th><th>SMA 100</th><th>SMA 200</th>" +
+      "<th>Name</th><th>Last close</th><th class='hide-1240'>Date</th><th class='hide-720'>Optimal SMA (band)</th>" +
+      "<th class='hide-480'>SMA value</th><th>Distance</th><th>Status</th><th class='hide-1240'>Days in status</th>" +
+      "<th class='hide-1240'>SMA 50</th><th class='hide-1240'>SMA 100</th><th class='hide-1240'>SMA 200</th>" +
       "</tr></thead>";
 
 
@@ -136,19 +150,19 @@
 
       addCell(row, entry.name);
       addCell(row, format(latest.close));
-      addCell(row, latest.date);
-      addCell(row, entry.n + " (" + entry.low_n + " to " + entry.high_n + ")");
-      addCell(row, format(latest.sma_n));
+      addCell(row, latest.date, "hide-1240");
+      addCell(row, entry.n + " (" + entry.low_n + " to " + entry.high_n + ")", "hide-720");
+      addCell(row, format(latest.sma_n), "hide-480");
       addCell(row, sign + format(latest.distance_pct) + "%");
       if (latest.is_open) {
         addCell(row, "Open", "open");
       } else {
         addCell(row, "Closed", "closed");
       }
-      addCell(row, latest.days_in_state);
-      addCell(row, format(latest.sma_50));
-      addCell(row, format(latest.sma_100));
-      addCell(row, format(latest.sma_200));
+      addCell(row, latest.days_in_state, "hide-1240");
+      addCell(row, format(latest.sma_50), "hide-1240");
+      addCell(row, format(latest.sma_100), "hide-1240");
+      addCell(row, format(latest.sma_200), "hide-1240");
     }
 
 
@@ -200,7 +214,7 @@
         view.beatLine.textContent = "";
       } else {
         view.beatLine.textContent =
-          "Of the SMA lengths from 2 to 200, " + Math.round(entry.beat_dca_pct) + "% beat dollar cost averaging.";
+          "For " + entry.name + ", " + Math.round(entry.beat_dca_pct) + "% of the SMA lengths from 2 to 200 beat dollar cost averaging.";
       }
     }
 
