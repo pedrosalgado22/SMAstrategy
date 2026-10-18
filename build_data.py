@@ -8,7 +8,7 @@ from pathlib import Path
 import pandas as pd
 import yfinance as yf
 
-from config import TICKERS, OPTIMAL_N, BAND, SHOW_DAYS
+from config import GROUPS, OPTIMAL_N, BEAT_DCA_PCT, DISPLAY_NAMES, BAND, SHOW_DAYS
 
 output_path = Path(__file__).parent / "docs" / "data.json"
 output_path.parent.mkdir(exist_ok=True)   # create the docs folder if it does not exist
@@ -35,7 +35,7 @@ def download_prices(ticker):
     return df
 
 
-def build_entry(name, ticker, n):
+def build_entry(name, ticker, n, beat_dca_pct):
     df = download_prices(ticker)
 
     low = max(1, n - BAND)
@@ -83,30 +83,35 @@ def build_entry(name, ticker, n):
         series[column] = to_list(shown[column])
 
     return {"name": name, "ticker": ticker, "n": n, "low_n": low, "high_n": high,
-            "latest": latest, "series": series}
+            "beat_dca_pct": beat_dca_pct, "latest": latest, "series": series}
 
 
-entries = []
-skipped = []   # tickers that failed, shown as a note on the page
-for name, ticker in TICKERS.items():
-    if name not in OPTIMAL_N:
-        skipped.append(f"{name} (no optimal n in config.py)")
-        print("skipped", name, "- no optimal n in config.py")
-        continue
-    try:
-        entries.append(build_entry(name, ticker, OPTIMAL_N[name]))
-        print("ok     ", name)
-    except Exception as error:   # one bad ticker should not stop the others
-        skipped.append(f"{name} ({error})")
-        print("skipped", name, "-", error)
+groups = []
+total_entries = 0
+for title, tickers in GROUPS.items():
+    entries = []
+    skipped = []   # tickers that failed, shown as a note on the page
+    for key, ticker in tickers.items():
+        name = DISPLAY_NAMES.get(key, key)   # the name shown on the page
+        if key not in OPTIMAL_N:
+            skipped.append(f"{name} (no optimal n in config.py)")
+            print("skipped", name, "- no optimal n in config.py")
+            continue
+        try:
+            entries.append(build_entry(name, ticker, OPTIMAL_N[key], BEAT_DCA_PCT.get(key)))
+            print("ok     ", name)
+        except Exception as error:   # one bad ticker should not stop the others
+            skipped.append(f"{name} ({error})")
+            print("skipped", name, "-", error)
+    groups.append({"title": title, "entries": entries, "skipped": skipped})
+    total_entries += len(entries)
 
-if len(entries) == 0:
+if total_entries == 0:
     raise SystemExit("Nothing was downloaded, so data.json was not changed.")
 
 output = {
     "updated": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
-    "entries": entries,
-    "skipped": skipped,
+    "groups": groups,
 }
 with open(output_path, "w") as file:
     json.dump(output, file, allow_nan=False)   # allow_nan=False: crash instead of writing broken JSON

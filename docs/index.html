@@ -4,9 +4,6 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>SMA dashboard</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600&display=swap" rel="stylesheet">
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
   <style>
     /* colours: light mode first, dark mode replaces them below */
@@ -38,16 +35,20 @@
       padding: 32px 16px 64px;
       background: var(--background);
       color: var(--text);
-      font-family: "Source Sans 3", system-ui, sans-serif;
+      /* Apple's system font (SF Pro) on Mac, iPhone and iPad, a similar font everywhere else */
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
+      -webkit-font-smoothing: antialiased;
       font-size: 16px;
       line-height: 1.5;
     }
-    h1 { font-size: 28px; margin: 0 0 4px; }
-    h2 { font-size: 20px; margin: 40px 0 12px; }
+    h1 { font-size: 32px; margin: 0 0 4px; }
+    h2 { font-size: 24px; margin: 0 0 12px; }
     p { margin: 8px 0 0; }
+    a { color: var(--accent); }
     .muted { color: var(--muted); }
+    section { margin-top: 56px; }
 
-    .table-wrap { overflow-x: auto; margin-top: 24px; }
+    .table-wrap { overflow-x: auto; margin-top: 12px; }
     table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
     th, td { padding: 8px 12px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--line); }
     th:first-child, td:first-child { text-align: left; }
@@ -58,6 +59,7 @@
     .closed { color: var(--muted); }
 
     select {
+      margin-top: 24px;
       font: inherit;
       padding: 6px 10px;
       color: var(--text);
@@ -65,52 +67,47 @@
       border: 1px solid var(--line);
       border-radius: 4px;
     }
-    #chart { margin-top: 12px; }
+    .chart { margin-top: 12px; }
+
+    footer { margin-top: 64px; padding-top: 16px; border-top: 1px solid var(--line); }
   </style>
 </head>
 <body>
   <h1>SMA dashboard</h1>
   <p class="muted" id="updated">Loading data...</p>
-  <p class="muted" id="skipped" hidden></p>
 
-  <div class="table-wrap">
-    <table id="table">
-      <thead>
-        <tr>
-          <th>Name</th>
-          <th>Last close</th>
-          <th>Date</th>
-          <th>Optimal SMA (band)</th>
-          <th>SMA value</th>
-          <th>Distance</th>
-          <th>Status</th>
-          <th>Days in status</th>
-          <th>SMA 50</th>
-          <th>SMA 100</th>
-          <th>SMA 200</th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    </table>
-  </div>
-  <p class="muted">
-    Open means the last close is at or below the optimal SMA, the buy rule from the backtest.
-    Closed means it is above. Click a row to show its chart.
-  </p>
+  <div id="sections"></div>
 
-  <h2>Chart</h2>
-  <select id="picker" aria-label="Choose a stock or index"></select>
-  <div id="chart"></div>
-  <p class="muted">Daily closing prices. This is a personal project, not financial advice.</p>
+  <footer>
+    <a href="https://github.com/pedrosalgado22/SMAstrategy">View the code on GitHub</a>
+  </footer>
 
   <script>
-    const picker = document.getElementById("picker");
-    let data = null;   // everything from data.json, filled in once it has loaded
+    const SMA_WIDTH = 2;       // line thickness of the SMA 50, 100 and 200 lines
+    const OPTIMAL_WIDTH = 3;   // line thickness of the optimal SMA line
+
+    const TABLE_HEAD =
+      "<thead><tr>" +
+      "<th>Name</th><th>Last close</th><th>Date</th><th>Optimal SMA (band)</th><th>SMA value</th>" +
+      "<th>Distance</th><th>Status</th><th>Days in status</th><th>SMA 50</th><th>SMA 100</th><th>SMA 200</th>" +
+      "</tr></thead>";
 
 
     function format(number) {
       // 7744.06 -> "7,744.06"
       return number.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+
+    function makeElement(tag, text, className) {
+      const element = document.createElement(tag);
+      if (text) {
+        element.textContent = text;
+      }
+      if (className) {
+        element.className = className;
+      }
+      return element;
     }
 
 
@@ -123,13 +120,13 @@
     }
 
 
-    function addRow(tbody, entry, index) {
+    function addRow(tbody, entry, index, view) {
       const latest = entry.latest;
       const row = tbody.insertRow();
 
       row.onclick = function () {   // clicking a row shows its chart
-        picker.value = index;
-        drawChart();
+        view.picker.value = index;
+        drawChart(view);
       };
 
       let sign = "";
@@ -155,13 +152,15 @@
     }
 
 
-    function drawChart() {
-      const entry = data.entries[picker.value];
+    function drawChart(view) {
+      // view holds the parts of one section: its group of tickers, dropdown, chart box and text line
+      const entry = view.group.entries[view.picker.value];
       const s = entry.series;
       const style = getComputedStyle(document.documentElement);
       const textColor = style.getPropertyValue("--text").trim();
       const gridColor = style.getPropertyValue("--grid").trim();
       const accent = style.getPropertyValue("--accent").trim();
+      const fontFamily = getComputedStyle(document.body).fontFamily;
 
       const traces = [
         // the band: an invisible lower line, then the upper line filled down to it
@@ -170,10 +169,11 @@
           line: { width: 0 }, fill: "tonexty", fillcolor: "rgba(80, 120, 220, 0.18)", hoverinfo: "skip" },
 
         { x: s.dates, y: s.close, name: "Close", mode: "lines", line: { color: textColor, width: 1.5 } },
-        { x: s.dates, y: s.sma_50, name: "SMA 50", mode: "lines", line: { color: "#d4a017", width: 1.2 } },
-        { x: s.dates, y: s.sma_100, name: "SMA 100", mode: "lines", line: { color: "#2e9e4f", width: 1.2 } },
-        { x: s.dates, y: s.sma_200, name: "SMA 200", mode: "lines", line: { color: "#d64545", width: 1.2 } },
-        { x: s.dates, y: s.sma_n, name: "SMA " + entry.n + " (optimal)", mode: "lines", line: { color: accent, width: 3 } },
+        { x: s.dates, y: s.sma_50, name: "SMA 50", mode: "lines", line: { color: "#d4a017", width: SMA_WIDTH } },
+        { x: s.dates, y: s.sma_100, name: "SMA 100", mode: "lines", line: { color: "#2e9e4f", width: SMA_WIDTH } },
+        { x: s.dates, y: s.sma_200, name: "SMA 200", mode: "lines", line: { color: "#d64545", width: SMA_WIDTH } },
+        { x: s.dates, y: s.sma_n, name: "SMA " + entry.n + " (optimal)", mode: "lines",
+          line: { color: accent, width: OPTIMAL_WIDTH } },
 
         { x: [entry.latest.date], y: [entry.latest.close], name: "Last close", mode: "markers",
           marker: { size: 10, color: textColor } }
@@ -185,33 +185,80 @@
         title: { text: entry.name + ": close and SMAs" },
         paper_bgcolor: "rgba(0,0,0,0)",
         plot_bgcolor: "rgba(0,0,0,0)",
-        font: { color: textColor, family: "Source Sans 3, system-ui, sans-serif" },
+        font: { color: textColor, family: fontFamily },
         hovermode: "x unified",
+        hoverlabel: { bgcolor: "#ffffff", font: { color: "#000000" } },   // the box shown on hover: white with black text
         legend: { orientation: "h", y: -0.15 },
         xaxis: { gridcolor: gridColor },
         yaxis: { gridcolor: gridColor, separatethousands: true }
       };
 
-      Plotly.newPlot("chart", traces, layout, { responsive: true });
+      Plotly.newPlot(view.chart, traces, layout, { responsive: true });
+
+      // the line under the chart: how many SMA lengths beat dollar cost averaging
+      if (entry.beat_dca_pct === null) {
+        view.beatLine.textContent = "";
+      } else {
+        view.beatLine.textContent =
+          "Of the SMA lengths from 2 to 200, " + Math.round(entry.beat_dca_pct) + "% beat dollar cost averaging.";
+      }
     }
 
 
-    function showPage() {
+    function addSection(parent, group) {
+      // one section of the page: title, table, note, dropdown, chart and text line
+      const section = makeElement("section");
+      parent.appendChild(section);   // attach first, the chart needs to be on the page to get its size
+      section.appendChild(makeElement("h2", group.title));
+
+      if (group.skipped.length > 0) {
+        section.appendChild(makeElement("p", "Could not update: " + group.skipped.join(", ") + ".", "muted"));
+      }
+      if (group.entries.length === 0) {
+        section.appendChild(makeElement("p", "Nothing to show yet.", "muted"));
+        return;
+      }
+
+      const view = {
+        group: group,
+        picker: makeElement("select"),
+        chart: makeElement("div", "", "chart"),
+        beatLine: makeElement("p", "", "muted")
+      };
+      view.picker.setAttribute("aria-label", "Choose from " + group.title);
+
+      const table = makeElement("table");
+      table.innerHTML = TABLE_HEAD;
+      const tbody = makeElement("tbody");
+      table.appendChild(tbody);
+      for (let i = 0; i < group.entries.length; i++) {
+        addRow(tbody, group.entries[i], i, view);
+        view.picker.add(new Option(group.entries[i].name, i));
+      }
+
+      const wrap = makeElement("div", "", "table-wrap");
+      wrap.appendChild(table);
+      section.appendChild(wrap);
+      section.appendChild(makeElement("p",
+        "Open means the last close is at or below the optimal SMA, the buy rule from the backtest. " +
+        "Closed means it is above. Click a row to show its chart.", "muted"));
+      section.appendChild(view.picker);
+      section.appendChild(view.chart);
+      section.appendChild(view.beatLine);
+
+      view.picker.onchange = function () {
+        drawChart(view);
+      };
+      drawChart(view);
+    }
+
+
+    function showPage(data) {
       document.getElementById("updated").textContent = "Updated " + data.updated + " from the daily closing prices.";
-
-      if (data.skipped.length > 0) {
-        const box = document.getElementById("skipped");
-        box.textContent = "Could not update: " + data.skipped.join(", ") + ".";
-        box.hidden = false;
+      const sections = document.getElementById("sections");
+      for (let i = 0; i < data.groups.length; i++) {
+        addSection(sections, data.groups[i]);
       }
-
-      const tbody = document.querySelector("#table tbody");
-      for (let i = 0; i < data.entries.length; i++) {
-        addRow(tbody, data.entries[i], i);
-        picker.add(new Option(data.entries[i].name, i));
-      }
-      picker.onchange = drawChart;
-      drawChart();
     }
 
 
@@ -219,9 +266,8 @@
       .then(function (response) {
         return response.json();
       })
-      .then(function (loaded) {
-        data = loaded;
-        showPage();
+      .then(function (data) {
+        showPage(data);
       })
       .catch(function (error) {
         document.getElementById("updated").textContent =
