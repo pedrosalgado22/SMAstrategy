@@ -31,8 +31,8 @@
 
     body {
       margin: 0 auto;
-      max-width: 1600px;
-      padding: 32px 24px 64px;
+      max-width: 1800px;
+      padding: 32px 4vw 64px;
       background: var(--background);
       color: var(--text);
       /* Apple's system font (SF Pro) on Mac, iPhone and iPad, a similar font everywhere else */
@@ -47,17 +47,37 @@
     a { color: var(--accent); }
     .muted { color: var(--muted); }
     section { margin-top: 56px; }
+    .section-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px; margin-bottom: 12px; }
+    .section-head h2 { margin: 0; }
+    .sorter { color: var(--muted); font-size: 14px; }
+    .sorter select { margin-top: 0; margin-left: 6px; }
 
-    .table-wrap { overflow-x: auto; margin-top: 12px; }
-    table { border-collapse: collapse; width: 100%; font-size: 15px; font-variant-numeric: tabular-nums; }
-    th, td { padding: 8px 10px; text-align: right; border-bottom: 1px solid var(--line); }
-    td { white-space: nowrap; }   /* numbers stay on one line, the headers may wrap onto two */
-    th:first-child, td:first-child { text-align: left; white-space: normal; }
-    th { font-weight: 600; color: var(--muted); }
+    .table-wrap { margin-top: 12px; }
+    table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+    th, td { padding: 8px 10px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--line); }
+    th:first-child, td:first-child { text-align: left; }
+    th { font-weight: 600; color: var(--muted); white-space: normal; }
     tbody tr { cursor: pointer; }
     tbody tr:hover { background: var(--grid); }
     .open { color: var(--open); font-weight: 600; }
     .closed { color: var(--muted); }
+
+    /* narrower screens hide the least important columns, so the table never needs to scroll */
+    @media (max-width: 1400px) {   /* hides SMA 50, SMA 100, SMA 200 */
+      th:nth-child(n+9), td:nth-child(n+9) { display: none; }
+    }
+    @media (max-width: 1100px) {   /* also hides Date and SMA value */
+      th:nth-child(3), td:nth-child(3), th:nth-child(5), td:nth-child(5) { display: none; }
+    }
+    @media (max-width: 900px) {    /* also hides Optimal SMA (band) and Days in status */
+      th:nth-child(4), td:nth-child(4), th:nth-child(8), td:nth-child(8) { display: none; }
+    }
+    @media (max-width: 600px) {    /* phones: tighter table, long names may wrap */
+      table { font-size: 14px; }
+      th, td { padding: 8px 6px; }
+      td:first-child { white-space: normal; }
+      .sorter .hint { display: none; }
+    }
 
     select {
       margin-top: 24px;
@@ -71,18 +91,6 @@
     .chart { margin-top: 12px; }
 
     footer { margin-top: 64px; padding-top: 16px; border-top: 1px solid var(--line); }
-
-    /* smaller screens: hide columns step by step so the table always fits */
-    @media (max-width: 1240px) { .hide-1240 { display: none; } }
-    @media (max-width: 720px) {
-      .hide-720 { display: none; }
-      body { padding: 24px 16px 48px; }
-    }
-    @media (max-width: 480px) {
-      .hide-480 { display: none; }
-      table { font-size: 14px; }
-      th, td { padding: 6px 8px; }
-    }
   </style>
 </head>
 <body>
@@ -101,10 +109,25 @@
 
     const TABLE_HEAD =
       "<thead><tr>" +
-      "<th>Name</th><th>Last close</th><th class='hide-1240'>Date</th><th class='hide-720'>Optimal SMA (band)</th>" +
-      "<th class='hide-480'>SMA value</th><th>Distance</th><th>Status</th><th class='hide-1240'>Days in status</th>" +
-      "<th class='hide-1240'>SMA 50</th><th class='hide-1240'>SMA 100</th><th class='hide-1240'>SMA 200</th>" +
+      "<th>Name</th><th>Last close</th><th>Date</th><th>Optimal SMA (band)</th><th>SMA value</th>" +
+      "<th>Distance</th><th>Status</th><th>Days in status</th><th>SMA 50</th><th>SMA 100</th><th>SMA 200</th>" +
       "</tr></thead>";
+
+    // what the table can be sorted by (high to low): the text in the dropdown, then what is sorted
+    const SORT_OPTIONS = [
+      ["Default order", "default"],
+      ["Status", "is_open"],
+      ["Days in status", "days_in_state"],
+      ["Distance", "distance_pct"],
+      ["Last close", "close"],
+      ["Optimal SMA", "n"],
+      ["SMA value", "sma_n"],
+      ["SMA 50", "sma_50"],
+      ["SMA 100", "sma_100"],
+      ["SMA 200", "sma_200"],
+      ["Date", "date"],
+      ["Name", "name"]
+    ];
 
 
     function format(number) {
@@ -150,19 +173,64 @@
 
       addCell(row, entry.name);
       addCell(row, format(latest.close));
-      addCell(row, latest.date, "hide-1240");
-      addCell(row, entry.n + " (" + entry.low_n + " to " + entry.high_n + ")", "hide-720");
-      addCell(row, format(latest.sma_n), "hide-480");
+      addCell(row, latest.date);
+      addCell(row, entry.n + " (" + entry.low_n + " to " + entry.high_n + ")");
+      addCell(row, format(latest.sma_n));
       addCell(row, sign + format(latest.distance_pct) + "%");
       if (latest.is_open) {
         addCell(row, "Open", "open");
       } else {
         addCell(row, "Closed", "closed");
       }
-      addCell(row, latest.days_in_state, "hide-1240");
-      addCell(row, format(latest.sma_50), "hide-1240");
-      addCell(row, format(latest.sma_100), "hide-1240");
-      addCell(row, format(latest.sma_200), "hide-1240");
+      addCell(row, latest.days_in_state);
+      addCell(row, format(latest.sma_50));
+      addCell(row, format(latest.sma_100));
+      addCell(row, format(latest.sma_200));
+    }
+
+
+    function sortValue(entry, key) {
+      // the value of one entry that the table is sorted by
+      if (key === "name") {
+        return entry.name;
+      }
+      if (key === "n") {
+        return entry.n;
+      }
+      if (key === "is_open") {
+        if (entry.latest.is_open) {
+          return 1;
+        }
+        return 0;
+      }
+      return entry.latest[key];   // close, date, sma_n, distance_pct, days_in_state, sma_50, sma_100, sma_200
+    }
+
+
+    function fillTable(tbody, view, key) {
+      // fills the table with the rows, sorted from high to low by the chosen column
+      const entries = view.group.entries;
+      const order = [];
+      for (let i = 0; i < entries.length; i++) {
+        order.push(i);
+      }
+      if (key !== "default") {
+        order.sort(function (a, b) {
+          const first = sortValue(entries[a], key);
+          const second = sortValue(entries[b], key);
+          if (first > second) {
+            return -1;
+          }
+          if (first < second) {
+            return 1;
+          }
+          return a - b;   // same value: keep the original order
+        });
+      }
+      tbody.innerHTML = "";
+      for (let i = 0; i < order.length; i++) {
+        addRow(tbody, entries[order[i]], order[i], view);   // order[i] is the place of the entry in the original list, so a click still shows the right chart
+      }
     }
 
 
@@ -223,7 +291,9 @@
       // one section of the page: title, table, note, dropdown, chart and text line
       const section = makeElement("section");
       parent.appendChild(section);   // attach first, the chart needs to be on the page to get its size
-      section.appendChild(makeElement("h2", group.title));
+      const head = makeElement("div", "", "section-head");   // the title line: title on the left, sort dropdown on the right
+      head.appendChild(makeElement("h2", group.title));
+      section.appendChild(head);
 
       if (group.skipped.length > 0) {
         section.appendChild(makeElement("p", "Could not update: " + group.skipped.join(", ") + ".", "muted"));
@@ -249,6 +319,19 @@
         addRow(tbody, group.entries[i], i, view);
         view.picker.add(new Option(group.entries[i].name, i));
       }
+
+      const sorter = makeElement("label", "", "sorter");
+      sorter.appendChild(makeElement("span", "Sort by"));
+      sorter.appendChild(makeElement("span", " (descending)", "hint"));   // hidden on phones so the title and the dropdown fit on one line
+      const sortPicker = makeElement("select");
+      for (let i = 0; i < SORT_OPTIONS.length; i++) {
+        sortPicker.add(new Option(SORT_OPTIONS[i][0], SORT_OPTIONS[i][1]));
+      }
+      sorter.appendChild(sortPicker);
+      head.appendChild(sorter);
+      sortPicker.onchange = function () {
+        fillTable(tbody, view, sortPicker.value);
+      };
 
       const wrap = makeElement("div", "", "table-wrap");
       wrap.appendChild(table);
