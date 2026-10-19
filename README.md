@@ -1,444 +1,296 @@
-# SMAstrategy
+# SMA Strategy
 
-Does buying when the market touches its moving average (SMA) beat buying on a fixed schedule (DCA)?
+An ETL and analysis project. It fetches daily prices from Yahoo Finance, tests buying at a simple moving average (SMA) against plain monthly investing (DCA) on 9 stock indexes and 39 large companies over about 40 years, picks an optimal SMA length for each asset, and publishes the current state as an automatically updated dashboard.
 
-A data science / analysis project on major stock indices over ~40 years. It is **not** price prediction. It studies what happens when people buy at the SMA (any length from 1 to 200 days).
+[**Live dashboard**](https://pedrosalgado22.github.io/SMAstrategy/)
 
-**Headline result:** buying at the SMA almost never beat plain DCA. Gaps are small (mostly within about 2%), DCA wins about 80% of the cases, and no SMA length works across indices. Details in section 7.
-
----
-
-## 1. Question
-
-With identical contributions, does deploying cash only when the index is at or below its SMA end with more wealth than DCA?
-
-- Each index is analysed **alone**, against its own DCA. Indices are not compared with each other.
-- Earlier definition of "beat the market": outperform the S&P 500.
-- Only **buying** is tested. No selling.
-- Untested prior from the literature (e.g. Faber 2007): trend filters mostly cut drawdown and keep returns similar. They may not raise returns in strong bull markets.
+<!-- add a screenshot of the dashboard here, for example: ![Dashboard](docs/screenshot.png) -->
 
 ---
 
-## 2. Experiment and rules
+## Disclaimer
 
-### Scenarios per index
+- **This is not financial advice.** Nothing here is a recommendation to buy or sell anything.
+- I know I am not discovering gold or predicting the market. Past performance does not influence future performance, and a rule that worked or failed on past data proves nothing about the future.
+- This is an ETL project, from fetching Yahoo data to deploying a dashboard, inspired by a trading theme. It is not a financial holy grail. It serves as a reference for how I build a data pipeline end to end.
+- The main finding is modest: buying at the SMA usually did not beat plain DCA, and the gaps were small.
 
-| Scenario | Rule |
+---
+
+## What is an SMA?
+
+The **simple moving average** of length `n` is the average of the last `n` daily closing prices. It is a smoothed price line.
+
+```
+SMA(n) on day t = (close of day t + close of day t-1 + ... + close of day t-n+1) / n
+```
+
+- A short SMA (like 10) follows the price closely. A long SMA (like 200) moves slowly.
+- **DCA** (dollar cost averaging) means investing a fixed amount on a fixed schedule. It is the baseline here.
+- **SMA(1) is the closing price itself, so SMA(1) is DCA.** DCA is just one of the 200 strategies tested.
+- **The strategy:** new money waits as cash. When the previous day's close is at or below the previous day's SMA(n), all the waiting cash is invested.
+- The dashboard watches one length per asset, its optimal SMA (see [Optimal SMA per Asset](#optimal-sma-per-asset)).
+
+---
+
+## Repository Contents
+
+| File | Description |
 |---|---|
-| DCA | Buys with the cash as soon as it arrives |
-| SMA(n) | Holds cash until `close <= SMA(n)`, then buys with all of it |
+| `smaparsing_indexes.py` | Fetches the 9 index histories from Yahoo Finance and checks them (duplicates, missing values, gaps) |
+| `smaparsing_individualstocks.py` | Same for the 39 companies |
+| `smanalysis_50_100_200.ipynb` | DCA vs SMA 50, 100 and 200 on the indexes |
+| `smanalysis_50_100_200_ind.ipynb` | Same on the individual companies |
+| `smanalysis_simulation.ipynb` | The SMA 1 to 200 sweep on the indexes |
+| `smanalysis_simulation_ind.ipynb` | Same on the individual companies |
+| `config.py` | Dashboard settings: which assets to show, each one's optimal SMA, and the share of lengths that beat DCA |
+| `build_data.py` | Downloads fresh prices, recalculates the SMAs and writes `docs/data.json` |
+| `data/results/` | Saved analysis results |
+| `docs/` | The dashboard served by GitHub Pages (`index.html` and `data.json`) |
+| `.github/workflows/` | Scheduled GitHub Actions workflow that refreshes the data |
+| `requirements.txt` | Python dependencies |
+| `LICENSE`, `.gitignore` | License and ignored files |
 
-Notebook runs use n = 50, 100, 200 plus DCA (4 scenarios). The sweep uses every n from 1 to 200.
+The raw and processed CSVs are created locally by the parsing scripts.
 
-**One-sentence version:** if money is available and `close <= SMA`, buy with all the available money.
+---
 
-### Rules (same for every scenario)
+## Run It Yourself
 
-- **Buy condition:** checked every trading day.
-- **Signal:** uses the **previous trading day's** `Close` and SMA. Today's close is only the purchase price (no look-ahead).
-- **No SMA yet:** if the previous day's SMA is missing, there is no signal that day.
-- **Buy size:** the whole pile of cash. Fractional units allowed.
-- **Rule type:** `close <= SMA`, not a cross event.
-- **Costs, taxes, inflation:** none / ignored.
-- **SMA:** mean of the last N `Close` rows (trading days), computed on the full file so pre-1986 data warms it up.
-- **Start day:** the first row on or after 1986-01-01 with SMA200 available. Indices with older data start in Jan 1986. Others wait for a buffer of the first 200 `Close` rows. All scenarios of an index share the same start.
-- **End day:** each index's last close (all ended 2026-10-09).
+1. `pip install -r requirements.txt`
+2. Run `smaparsing_indexes.py` and `smaparsing_individualstocks.py`. They download Yahoo Finance data, run the data checks and save raw and processed CSVs (with the SMA columns).
+3. Open the notebooks to rerun the studies. Their folder paths are absolute to the author's machine, so edit them first.
+4. Run `python build_data.py` to build `docs/data.json`. It downloads its own prices and does not use the notebook CSVs.
+5. To view the page locally, run `python -m http.server` inside `docs/` and open `http://localhost:8000`. Opening `index.html` directly does not load the data.
 
-### Payment schedules (three runs were made)
+---
 
-| Run | Payment | Per year | Used for |
-|---|---|---|---|
-| Weekly | 250 every Monday (+7 days) | about 13,045 | Section 7.2 |
-| Monthly | 1,087 on the 1st of each month | about 13,044 | Section 7.3 (equal total money to weekly) |
-| Monthly | 1,000 on the 1st of each month | 12,000 | The sweep script (percentages are scale-free) |
+## Automation
 
-- **Weekly:** first payment is the first Monday on or after the start. A holiday Monday still pays, and the purchase happens on the next trading day.
-- **Monthly:** first payment is the first 1st-of-month on or after the start (a Jan 2 start pays first on Feb 1). A weekend or holiday 1st is paid on the next trading day.
-- **Why total invested differs:** 250 per week is more than 1,000 per month, because a year has about 52.2 weeks and 12 months. 1,087 makes the two equal.
-- Payments on a non-trading day miss one day of interest (tiny simplification).
+A scheduled GitHub Actions workflow keeps the dashboard current without manual work:
+
+1. It runs `build_data.py` on weekdays at 23:00 UTC, after the main markets have closed. It can also be started by hand from the Actions tab.
+2. `build_data.py` downloads 5 years of daily closes per asset and recalculates SMA 50/100/200 and the optimal SMA with its band. It writes `docs/data.json`: for each asset the last close, the optimal SMA and its band, the SMA value, the distance to it, the status, the days in that status, the SMAs, and the chart series (the last 252 trading days).
+3. The workflow commits the updated file to this repository (commit message "Update data").
+4. GitHub Pages serves `docs/`, and the page reads `data.json` in the browser.
+
+- An asset that fails to download, or has too little history, is skipped and listed in its section as "Could not update". If nothing downloads, `data.json` is left unchanged and the run fails.
+- No API keys or secrets are used.
+
+---
+
+## The Study
+
+**Question:** with identical contributions, does investing only when the market is at or below its SMA end with more money than DCA?
+
+- Each asset is compared only with **its own DCA**, so results are shown as **% vs DCA**. Assets are not compared with each other.
+- Only buying is tested. There is no selling.
+- **Sweep:** every length from 1 to 200 is simulated per asset, and the 200 results are compared.
+
+### Rules (same for every strategy)
+
+- **Signal:** the previous trading day's close and SMA decide, and today's close is the purchase price. This avoids using a price to decide on that same price. If the previous SMA does not exist yet, there is no signal.
+- **Rule type:** `close <= SMA`, checked every trading day. It is a state, not a cross event.
+- **Buy size:** all the waiting cash, with fractional units allowed.
+- **Costs, taxes and inflation:** ignored.
+- **SMA:** the mean of the last `n` closes, computed on the full history so earlier data warms it up.
+- **Start:** the first day on or after 1986-01-01 with 200 closes available. All 200 strategies of an asset share the same start and end.
 
 ### Money model
 
-- **Interest:** uninvested cash earns 2% a year, compounded over the calendar days since the previous row: `cash *= 1.02 ** (days / 365)`.
-- **Dividends:** indices are treated as accumulating. Units grow by a yearly dividend yield in the same step: `units *= (1 + yield) ** (days / 365)`.
-- **Dividend yields:** one constant per index, set manually. These are placeholders.
+- **Payments:** three runs were made.
 
-| Index | Placeholder yield |
+| Run | Payment | Per year | Used for |
+|---|---|---|---|
+| Weekly | 250 every Monday | about 13,045 | Weekly results |
+| Monthly | 1,087 on the 1st | about 13,044 | Monthly results (equal total money to weekly) |
+| Monthly | 1,000 on the 1st | 12,000 | The 1 to 200 sweep (percentages are scale-free) |
+
+- A weekend or holiday payment is paid on the next trading day. 250 per week is more money than 1,000 per month because a year has about 52.2 weeks and 12 months.
+- **Interest:** cash earns 2% a year, compounded over the calendar days between prices.
+- **Dividends:** assets are treated as accumulating. Units grow by a yearly dividend yield. The yields are one constant per asset, set manually, and they are placeholders: S&P 500 2%, Nasdaq Composite 1%, Nasdaq 100 1%, FTSE 100 4%, Nikkei 1%, DAX 0% (Yahoo's DAX already includes dividends), CAC 40 3%, Hang Seng 3%, Shanghai 2%.
+- **Final amount** = units x last close + leftover cash. It includes all the money invested plus any cash still waiting.
+
+---
+
+## Data
+
+Source: Yahoo Finance through `yfinance` (unofficial, so it can break).
+
+| Index | Ticker | First date | Rows | Longest gap (days) | Experiment start |
+|---|---|---|---|---|---|
+| S&P 500 | ^GSPC | 1950-01-03 | 19318 | 7 | 1986-01-02 |
+| Nasdaq Composite | ^IXIC | 1971-02-05 | 14040 | 7 | 1986-01-02 |
+| Nasdaq 100 | ^NDX | 1985-10-01 | 10339 | 7 | 1986-07-16 |
+| FTSE 100 | ^FTSE | 1984-01-03 | 10809 | 5 | 1986-01-02 |
+| Nikkei 225 | ^N225 | 1965-01-05 | 15186 | 11 | 1986-01-06 |
+| DAX | ^GDAXI | 1987-12-30 | 9811 | 6 | 1988-10-14 |
+| CAC 40 | ^FCHI | 1990-03-01 | 9303 | 6 | 1990-12-17 |
+| Hang Seng | ^HSI | 1986-12-31 | 9820 | 7 | 1987-10-26 |
+| Shanghai Composite | 000001.SS | 1997-07-02 | 7093 | 20 | 1998-04-29 |
+
+- Indexes without enough history before 1986 wait for 200 closes before starting.
+- No duplicate dates and no missing values in the final download. An earlier download had an empty last Shanghai row, which was fixed by dropping rows with no close.
+- Gaps have real-world causes (inferred from size): the 7-day US gap is the post-9/11 closure, and the 11-day Nikkei gap is a Japanese holiday stretch. **Open item:** Shanghai's 20-day gap looks too long for holidays and is not resolved.
+- All indexes except the DAX are price indexes. The DAX is a total-return index.
+- Yahoo's newest rows can change between downloads (an index's last day can appear or disappear), so results are only exactly comparable when they come from the same download.
+
+### Companies (39, in four groups)
+
+| Group | Companies |
 |---|---|
-| sp500 | 2% |
-| nasdaq_comp | 1% |
-| nasdaq100 | 1% |
-| ftse100 | 4% |
-| nikkei | 1% |
-| dax | 0% (Yahoo's DAX is already a total-return index) |
-| cac40 | 3% |
-| hang_seng | 3% |
-| shanghai | 2% |
+| Hindsight winners (11) | Microsoft, Apple, Amazon, Nvidia, Alphabet, Meta, Broadcom, Tesla, Netflix, Visa, Mastercard |
+| Long-time US giants (12) | Exxon Mobil, IBM, General Electric, Coca-Cola, Johnson & Johnson, Procter & Gamble, Walmart, JPMorgan, Berkshire Hathaway, Eli Lilly, Costco, Oracle |
+| Fell hard but still trade (6) | Citigroup, AIG, Intel, Cisco, Boeing, Nokia |
+| Based outside the US (10) | Nestlé, BP, Siemens, Toyota, TSMC, Tencent, Samsung, Alibaba, ASML, Saudi Aramco |
 
-A constant yield is crude. Real yields moved a lot over 40 years (S&P 500: roughly 3%+ in the late 1980s, about 1.5% recently). It can favour whichever strategy holds the most units for the longest, probably DCA.
+- Companies that started after 1986 are included from their first usable day.
+- Prices are dividend-adjusted (`auto_adjust=True`), so their dividend yield is 0.
+- **Enron and Bear Stearns are not included.** Yahoo drops companies that went bankrupt or were acquired, so the "flops" are giants that crashed but still trade.
+- The sample is chosen with hindsight and has survivorship bias, which tilts results toward DCA.
 
-### Daily loop (one function for all scenarios)
+### Data not easily available for free
 
-For each trading day from the start to the end:
+- **MSCI All World and Emerging Markets:** the index history is licensed. ETFs (VT/ACWI about 2008, EEM about 2003) would give a shorter window.
+- **Delisted companies:** a paid vendor such as FirstRate Data (stocks from 2000, over 7,000 delisted tickers) would cover them. It was evaluated and not bought.
 
-1. Add interest to cash and dividends to units, for the days since the previous row.
-2. Add any payments due on or before today.
-3. Buy if cash > 0 and yesterday's close <= yesterday's SMA.
-4. After the last row, compute the result.
+---
 
-### Final amount
+## Results
 
-`final amount = units x last Close + leftover cash`
-
-- Units hold everything that was invested (plus reinvested dividends). Leftover cash is money not yet invested, plus its interest.
-- So the final amount includes all the money invested plus the leftover cash.
-- Verified: with 0% interest and dividends, a flat price gives a final amount equal to total invested, and a rising price (never buys, all stays cash) also equals total invested.
-
-### Output metrics in the notebook results table
-
-`start_date`, `end_date`, `total_invested`, `final_value`, `total_return_pct` (final / invested - 1), `units`, `avg_price` (money spent on purchases / units purchased, dividend units excluded), `leftover_cash`, `n_buys`.
-
-- `avg_price` is `None` if a strategy never buys.
-- `total_invested` is identical across the scenarios of an index (check).
+All results are % vs the same asset's DCA, so a positive number means timing beat DCA. The sweep used monthly payments of 1,000 with data to 2026-10-14/15. The weekly and monthly runs ended 2026-10-09, so a few numbers moved slightly (for example Nikkei SMA200 from +0.30% to +0.35%).
 
 ### SMA sweep (1 to 200)
 
-- For each index, loop `n` over `range(1, 201)`. Each pass computes SMA(n) into one temporary column and runs the same simulation.
-- **`n = 1` is DCA.** SMA(1) is the close, so `close <= SMA` is always true. Checked: identical to the DCA run.
-- All 200 strategies share the start date set by `sma_200`.
-- SMA(50), SMA(100) and SMA(200) from the sweep match the notebook table (percentages are scale-free).
-- Console block prints, per index: DCA final amount, SMA50/100/200 vs DCA, average of n = 2-200, best and worst n, how many of the 199 lengths beat DCA, and 10 group means.
-- **Groups for the bars:** 1-20, 21-40, ..., 181-200 (non-overlapping), mean final amount of each group.
-
----
-
-## 3. Indices and data
-
-Source: Yahoo Finance via `yfinance` (unofficial, can break). Stooq is a backup option.
-
-| Index | Ticker | First date | Last date | Rows | Longest gap (days) |
-|---|---|---|---|---|---|
-| sp500 | ^GSPC | 1950-01-03 | 2026-10-09 | 19315 | 7 |
-| nasdaq_comp | ^IXIC | 1971-02-05 | 2026-10-09 | 14037 | 7 |
-| nasdaq100 | ^NDX | 1985-10-01 | 2026-10-09 | 10336 | 7 |
-| ftse100 | ^FTSE | 1984-01-03 | 2026-10-09 | 10805 | 5 |
-| nikkei | ^N225 | 1965-01-05 | 2026-10-09 | 15183 | 11 |
-| dax | ^GDAXI | 1987-12-30 | 2026-10-09 | 9807 | 6 |
-| cac40 | ^FCHI | 1990-03-01 | 2026-10-09 | 9299 | 6 |
-| hang_seng | ^HSI | 1986-12-31 | 2026-10-09 | 9816 | 7 |
-| shanghai | 000001.SS | 1997-07-02 | 2026-10-09 | 7089 | 20 |
-
-### Actual experiment start dates
-
-| Index | Start |
-|---|---|
-| sp500, nasdaq_comp, ftse100 | 1986-01-02 |
-| nikkei | 1986-01-06 |
-| nasdaq100 | 1986-07-16 (starts Oct 1985, too short for SMA200 in Jan 1986) |
-| hang_seng | 1987-10-26 |
-| dax | 1988-10-14 |
-| cac40 | 1990-12-17 |
-| shanghai | 1998-04-29 |
-
-### Data checks done
-
-- No duplicate dates and no NaN in any index on the final download.
-- An earlier download had an empty last Shanghai row (NaN `Close`), which made its `final_value` NaN. Fixed by dropping rows with no `Close` after saving the raw file.
-- Gaps have real-world causes (inferred from size): US 7 days is the post-9/11 closure, Nikkei 11 days is a Japanese holiday stretch.
-- **Open item:** Shanghai's 20-day gap looks too long for holidays. Find it with `gaps.nlargest(5)`. Gaps in late Jan/Feb or early Oct are holidays. Gaps elsewhere may be missing data.
-- Columns are `Close, High, Low, Open, Volume`. Volume is 0 for these indices. Early DAX rows have `Open = High = Low = Close`, so only `Close` is used.
-
-### Notes on the data
-
-- All indices except the DAX are **price** indices. The DAX is a **performance** (total return) index. This does not matter for stand-alone analysis. It would matter only when comparing against an external benchmark (cash, S&P 500).
-- Price-only data would slightly favour the timed strategies (cash misses dividends). The dividend model fixes that.
-
----
-
-## 4. Data we cannot easily get (free)
-
-### All World and Emerging Markets
-
-- MSCI ACWI and EM launched at the end of 1987, MSCI World in 1969. The history is licensed, so there is no ticker-level fix.
-- Yahoo's MSCI World series appears to cover only about 2012-2026 (one aggregator, unconfirmed).
-- MSCI's site has an end-of-day data search. Free download depth is unconfirmed.
-- Practical route: ETFs with shorter windows, labelled as short-window. VT/ACWI start about 2008, EEM about 2003, VWO about 2005 (unverified). Check each start date.
-- Optional long-history EM stand-in: country indices (Brazil, India, Korea, Taiwan, Mexico, Shanghai). It is cap-unweighted with mixed currencies, so label it clearly.
-- China has two reasonable indices (Shanghai mainland-only, Hang Seng Hong Kong-listed). Both are included.
-
-### FirstRate Data (paid vendor, evaluated, not bought)
-
-- Stocks start Jan 2000. 16,314 tickers, over 7,000 delisted, including former S&P 500, Nasdaq-100, Dow and Russell 3000 members.
-- Adjusted for splits and dividends. Intraday-focused, with daily bars. Only a 2-week free sample per ticker. No price on the page.
-- US index bars only from 2005, international from 2007, so it is too short for the indices.
-- No market-cap rankings.
-- Check before paying: whether its daily close includes out-of-hours trades, and how delisted tickers are named.
-- Plan: try Yahoo first, measure coverage, then buy only the missing tickers (per-ticker purchase appears to be offered; pricing and licensing unknown).
-
-### Individual companies (parked for now)
-
-Goal: the biggest companies over the longest history (first "top 25 in the world", settling for the 50 biggest in the S&P 500 or All World, then 25 every 5 years over 30 years).
-
-- **Survivorship bias:** today's biggest companies are today's winners. Evaluate each cohort **only forward** from its selection date. Use earlier history only to warm up the SMA.
-- The bias tilts toward DCA: strong uptrenders stay above their SMA and the timed buyer sits in cash.
-- Yahoo lacks delisted and merged companies.
-- **Ticker reuse trap:** Yahoo's "T" is today's AT&T (the former SBC), so its pre-2005 history is not the original AT&T's.
-- The 1989 global top 20 was mostly Japanese, and several of those banks later merged into Mizuho, so there are no free prices. A global top 25 is not achievable free beyond roughly the 2000s.
-- Free lists: finhacker.cz (top 20 US S&P 500 by market cap per year, 1989-2026, a blog, so cross-check it), CNBC snapshots (1989, 1999, 2009, 2014), Visual Capitalist (top 10 every 5 years from 1999, plus a current top 25), a free GitHub list of S&P 500 membership from 1996 (no market caps).
-- **Proposed design:** US top 20 per year from 1989. Cohorts at 1989, 1994, 1999, 2004, 2009, 2014, 2019, each tracked for 5 years. Report a **coverage rate** per cohort (companies with continuous history / 20). Require at least 10 years of history per stock.
-- Report the share of stocks where timed beats DCA and the median difference. The 20 stocks are correlated, so they are not independent tests.
-
----
-
-## 5. Code, files and conventions
-
-```
-SMAstrategy/
-  data/raw/         {name}_raw.csv        raw CSVs from Yahoo (git-ignored; .gitignore is written manually)
-  data/processed/   {name}_processed.csv  CSVs with sma_50, sma_100, sma_200
-```
-
-### Final script: `sma_sweep.py`
-
-One loop per index:
-
-1. Download from Yahoo and flatten the columns (`df.columns.get_level_values(0)`).
-2. Save the raw CSV and print the check (start, end, rows, duplicates, NaN, longest gap).
-3. Drop rows with no `Close`, add the SMA columns, save the processed CSV.
-4. Run 200 simulations (SMA 1 to 200). Print the console block.
-5. Draw one figure per index: a line chart of final amount by SMA length (200 points) and a bar chart of the 10 group means (different colors, final amount in thousands above each bar, y-axis not starting at 0).
-6. After the loop, `plt.show()` opens all 9 figures.
-
-- `simulate` in the script returns only the final amount (the graphs need nothing else). It needs the `sma_200` column for the start date.
-- Runtime about 2 minutes plus downloads (about 98 seconds on synthetic data).
-
-### Notebook (earlier version)
-
-| Cell | Content |
-|---|---|
-| 1 | Parameters: payment, `INTEREST_RATE = 0.02`, `START_DATE`, `DIV_YIELD`, `STRATEGIES` |
-| 2 | `simulate(df, sma_col, dividend_yield, values=None)`: full metrics. `sma_col=None` is DCA. `values` optional list of daily portfolio values for line charts |
-| 3 | Test on the S&P 500 (check `total_invested` is equal in all rows) |
-| 4 | Loop over 9 indices x 4 strategies, build the results table |
-
-### Style rules
-
-- Elementary code: for loops, function calls, basic tools. Minimal, no extras that were not asked for.
-- Don't reprint unchanged code. Use names actually defined in the code. No gitignore code in scripts.
-- Names: `original_data_path`, `processed_data_path`, `SMA_LENGTHS = [50, 100, 200]`, function `sma_calc`, columns `sma_{length}`.
-
-### Environment
-
-VS Code. A `.py` file uses the selected Python interpreter, while a notebook uses its own selected kernel. They can differ. Check with `import sys; print(sys.executable)` and set the same venv in both.
-
----
-
-## 6. Testing done
-
-- Hand calculation on small datasets matched exactly (weekly DCA and SMA50, monthly DCA).
-- An independent calendar-day implementation matched all 36 results (`final_value` within 0.0003%).
-- Money conservation (0% interest and dividends: spent + leftover = invested). Dividend formula check.
-- Blanking the last row's SMA changes nothing (no look-ahead).
-- A never-buys strategy crashed with a division by zero, which led to the `avg_price` guard.
-- Final script: ran end to end with a stand-in for `yfinance` on synthetic data (9 figures). Its `simulate` matched the tested one exactly. `n = 1` equals DCA. The final amount equals total invested for flat and rising prices.
-- The empty-last-row bug (Shanghai NaN) was reproduced and fixed.
-- The real-data results below come from the user's own runs.
-
----
-
-## 7. Results
-
-### 7.1 How to read
-
-- Every gap is **% vs the same index's DCA** (the indices differ hugely in scale).
-- `DCA x` is the DCA final amount divided by total invested.
-- A positive number means timing beat DCA.
-
-### 7.2 Weekly run (250 every Monday)
-
-| Index | Invested | DCA final | DCA x | SMA50 | SMA100 | SMA200 |
-|---|---|---|---|---|---|---|
-| sp500 | 531,750 | 9,136,301 | 17.2 | -0.29% | -0.95% | -1.33% |
-| nasdaq_comp | 531,750 | 14,958,705 | 28.1 | -0.94% | -1.06% | -0.52% |
-| nasdaq100 | 524,750 | 28,981,730 | 55.2 | -0.95% | -1.27% | **+0.74%** |
-| ftse100 | 531,750 | 3,990,222 | 7.5 | **+0.05%** | -1.35% | -0.31% |
-| nikkei | 531,750 | 2,728,705 | 5.1 | -0.45% | -0.20% | **+0.20%** |
-| dax | 495,500 | 2,883,331 | 5.8 | -0.51% | -0.33% | -2.48% |
-| cac40 | 467,250 | 1,967,391 | 4.2 | -0.01% | -0.09% | -1.43% |
-| hang_seng | 508,250 | 2,807,144 | 5.5 | -0.40% | -1.42% | -2.57% |
-| shanghai | 371,000 | 881,918 | 2.4 | -1.47% | -4.38% | -2.83% |
-
-### 7.3 Monthly run (1,087 on the 1st, equal total money)
-
-| Index | Invested | DCA final | DCA x | SMA50 | SMA100 | SMA200 |
-|---|---|---|---|---|---|---|
-| sp500 | 531,543 | 9,075,036 | 17.1 | -0.21% | -0.87% | -1.37% |
-| nasdaq_comp | 531,543 | 14,867,339 | 28.0 | -0.78% | -0.91% | -0.57% |
-| nasdaq100 | 525,021 | 28,903,328 | 55.1 | -0.83% | -1.17% | **+0.92%** |
-| ftse100 | 531,543 | 3,967,990 | 7.5 | **+0.08%** | -1.21% | -0.09% |
-| nikkei | 531,543 | 2,720,627 | 5.1 | -0.34% | -0.20% | **+0.30%** |
-| dax | 495,672 | 2,880,885 | 5.8 | -0.48% | -0.25% | -2.56% |
-| cac40 | 467,410 | 1,960,657 | 4.2 | **+0.16%** | **+0.19%** | -1.23% |
-| hang_seng | 508,716 | 2,812,165 | 5.5 | -0.25% | -1.44% | -2.59% |
-| shanghai | 371,754 | 885,524 | 2.4 | -1.53% | -4.55% | -2.90% |
-
-### 7.4 Buying behaviour (weekly run)
-
-Average purchase price vs DCA, and number of buys as % of DCA's number of buys.
-
-| Index | Avg price SMA50 / 100 / 200 | Buys % SMA50 / 100 / 200 |
-|---|---|---|
-| sp500 | +0.19 / -0.11 / +0.45 | 42 / 34 / 28 |
-| nasdaq_comp | +0.88 / +1.16 / -0.07 | 43 / 36 / 30 |
-| nasdaq100 | +0.92 / +1.30 / -1.17 | 44 / 36 / 29 |
-| ftse100 | -0.18 / +0.75 / +0.23 | 50 / 43 / 37 |
-| nikkei | +0.47 / +0.25 / -2.47 | 53 / 48 / 46 |
-| dax | +0.67 / +0.62 / +3.25 | 45 / 40 / 33 |
-| cac40 | -0.07 / -0.06 / +1.09 | 50 / 45 / 40 |
-| hang_seng | +0.34 / +1.08 / +2.05 | 51 / 48 / 43 |
-| shanghai | +1.42 / +4.44 / +2.85 | 55 / 53 / 51 |
-
-### 7.5 SMA sweep (monthly 1,000, SMA 1 to 200)
-
-| Index | DCA final | SMA50 | SMA100 | SMA200 | Average n=2-200 | Best n | Worst n | Lengths beating DCA |
+| Index | DCA final amount | SMA50 | SMA100 | SMA200 | Average n=2-200 | Best n | Worst n | Lengths beating DCA |
 |---|---|---|---|---|---|---|---|---|
-| sp500 | 8,348,699 | -0.21% | -0.87% | -1.37% | -0.75% | 10 (+0.13%) | 182 (-1.89%) | 11 of 199 |
-| nasdaq_comp | 13,677,404 | -0.78% | -0.91% | -0.57% | -0.99% | 2 (-0.23%) | 67 (-1.69%) | 0 |
-| nasdaq100 | 26,589,998 | -0.83% | -1.17% | +0.92% | -0.56% | 200 (+0.92%) | 158 (-1.98%) | 38 |
-| ftse100 | 3,650,405 | +0.08% | -1.21% | -0.09% | -0.05% | 184 (+1.03%) | 92 (-1.42%) | 96 |
-| nikkei | 2,502,876 | -0.34% | -0.20% | +0.30% | -0.15% | 194 (+0.43%) | 38 (-0.73%) | 59 |
-| dax | 2,650,308 | -0.48% | -0.25% | -2.56% | -0.90% | 3 (-0.03%) | 180 (-2.74%) | 0 |
-| cac40 | 1,803,733 | +0.16% | +0.19% | -1.23% | -0.04% | 94 (+0.45%) | 197 (-1.32%) | 136 |
-| hang_seng | 2,587,088 | -0.25% | -1.44% | -2.59% | -1.63% | 31 (-0.07%) | 158 (-3.49%) | 0 |
-| shanghai | 814,650 | -1.53% | -4.55% | -2.90% | -2.58% | 4 (-0.05%) | 98 (-4.72%) | 0 |
+| S&P 500 | 8,251,970 | -0.21% | -0.87% | -1.37% | -0.75% | 10 (+0.13%) | 182 (-1.89%) | 11 of 199 |
+| Nasdaq Composite | 13,342,712 | -0.78% | -0.91% | -0.57% | -0.99% | 2 (-0.23%) | 67 (-1.69%) | 0 |
+| Nasdaq 100 | 25,790,789 | -0.83% | -1.17% | +0.92% | -0.56% | 200 (+0.92%) | 158 (-1.98%) | 38 |
+| FTSE 100 | 3,730,816 | +0.08% | -1.21% | -0.09% | -0.05% | 184 (+1.03%) | 92 (-1.42%) | 96 |
+| Nikkei 225 | 2,336,295 | -0.34% | -0.20% | +0.35% | -0.13% | 194 (+0.47%) | 38 (-0.73%) | 68 |
+| DAX | 2,666,950 | -0.48% | -0.25% | -2.56% | -0.90% | 3 (-0.03%) | 180 (-2.74%) | 0 |
+| CAC 40 | 1,827,613 | +0.16% | +0.19% | -1.23% | -0.04% | 94 (+0.45%) | 197 (-1.32%) | 136 |
+| Hang Seng | 2,572,456 | -0.25% | -1.44% | -2.59% | -1.63% | 31 (-0.07%) | 158 (-3.49%) | 0 |
+| Shanghai Composite | 792,198 | -1.53% | -4.55% | -2.90% | -2.58% | 4 (-0.05%) | 98 (-4.72%) | 0 |
 
-Group means vs DCA (% of final amount):
+Mean result of each group of 20 lengths (the bars in the charts):
 
 | Index | 1-20 | 21-40 | 41-60 | 61-80 | 81-100 | 101-120 | 121-140 | 141-160 | 161-180 | 181-200 |
 |---|---|---|---|---|---|---|---|---|---|---|
-| sp500 | 0.00 | -0.14 | -0.16 | -0.58 | -0.95 | -1.13 | -0.91 | -0.78 | -1.28 | -1.49 |
-| nasdaq_comp | -0.36 | -0.90 | -0.83 | -1.37 | -0.81 | -1.04 | -1.28 | -1.18 | -1.24 | -0.88 |
-| nasdaq100 | -0.19 | -0.15 | -0.67 | -0.80 | -1.25 | -0.58 | -0.81 | -1.77 | 0.00 | +0.61 |
-| ftse100 | -0.35 | -0.46 | -0.03 | -0.43 | -1.15 | -0.37 | +0.39 | +0.59 | +0.75 | +0.58 |
-| nikkei | +0.02 | -0.41 | -0.42 | -0.38 | -0.29 | -0.12 | +0.03 | -0.30 | +0.07 | +0.30 |
-| dax | -0.18 | -0.35 | -0.67 | -0.76 | -0.33 | -0.40 | -0.47 | -0.84 | -2.43 | -2.50 |
-| cac40 | +0.10 | +0.20 | +0.13 | +0.08 | +0.21 | +0.11 | -0.10 | +0.06 | -0.25 | -0.96 |
-| hang_seng | -0.48 | -0.23 | -0.35 | -0.90 | -1.33 | -1.60 | -2.47 | -3.35 | -2.95 | -2.58 |
-| shanghai | -0.38 | -0.73 | -1.54 | -1.89 | -2.82 | -4.03 | -3.88 | -3.55 | -3.57 | -3.24 |
+| S&P 500 | 0.00 | -0.14 | -0.16 | -0.58 | -0.95 | -1.13 | -0.91 | -0.78 | -1.28 | -1.49 |
+| Nasdaq Composite | -0.36 | -0.90 | -0.83 | -1.37 | -0.81 | -1.04 | -1.28 | -1.18 | -1.24 | -0.88 |
+| Nasdaq 100 | -0.19 | -0.15 | -0.67 | -0.79 | -1.25 | -0.58 | -0.81 | -1.77 | 0.00 | +0.61 |
+| FTSE 100 | -0.35 | -0.46 | -0.03 | -0.43 | -1.15 | -0.37 | +0.39 | +0.59 | +0.75 | +0.58 |
+| Nikkei 225 | +0.03 | -0.41 | -0.41 | -0.37 | -0.29 | -0.12 | +0.05 | -0.26 | +0.12 | +0.34 |
+| DAX | -0.18 | -0.35 | -0.67 | -0.76 | -0.33 | -0.40 | -0.47 | -0.84 | -2.43 | -2.50 |
+| CAC 40 | +0.10 | +0.20 | +0.13 | +0.08 | +0.21 | +0.11 | -0.10 | +0.06 | -0.25 | -0.96 |
+| Hang Seng | -0.48 | -0.23 | -0.35 | -0.90 | -1.33 | -1.60 | -2.47 | -3.35 | -2.95 | -2.58 |
+| Shanghai Composite | -0.38 | -0.73 | -1.54 | -1.89 | -2.82 | -4.03 | -3.88 | -3.55 | -3.57 | -3.24 |
 
-### 7.6 What the results show
+### What the results show
 
-**DCA wins most of the time**
-- Of 27 comparisons (9 indices x SMA50/100/200), timing won 3 weekly and 5 monthly. Mean gap: -0.98% weekly, -0.91% monthly.
-- In the sweep, 340 of 1,791 lengths (19%) beat DCA. The mean of the per-index averages is -0.85%.
-- In 4 of 9 indices (nasdaq_comp, dax, hang_seng, shanghai) **no** length beat DCA. Their best lengths are n = 2, 3, 4 and 31, which is almost DCA itself.
-- The S&P 500 has 11 lengths above DCA. The best is n = 10 at only +0.13%, and the 1-20 group averages +0.00%.
+- **DCA wins most of the time.** Timing beat DCA in 3 of 27 weekly and 5 of 27 monthly comparisons (9 indexes x SMA 50/100/200). In the sweep, 349 of 1,791 lengths (19%) beat it. For 4 indexes (Nasdaq Composite, DAX, Hang Seng, Shanghai) none did.
+- **The gaps are small.** Almost everything is within about 2%. The best is +1.03% (FTSE, n=184, roughly 0.03% a year) and the worst is -4.72% (Shanghai, n=98). Every index grew 2.4x to 55x its invested money, which dwarfs these gaps. Differences within +-0.3% are noise: CAC 40 flips sign between the weekly and monthly runs.
+- **There is no best SMA length.** The best n by index is 10, 2, 200, 184, 194, 3, 94, 31 and 4, and some of these are single lucky points, which is why the dashboard uses a smoothed optimum (see below).
+- **Shape of the curves.** Lengths 1-20 sit close to DCA everywhere (-0.48% to +0.10%). The loss grows with length for the S&P 500, Nasdaq Composite, DAX, Hang Seng and Shanghai. Nasdaq 100, FTSE and Nikkei do better at long lengths, and their best n sits at or near the edge of the range (200, 184, 194), so lengths above 200 were not tested. CAC 40 is above DCA up to about 120 and then falls below it.
+- **SMA buyers do not buy cheaper.** Their average purchase price was above DCA's in 20 of 27 weekly and 21 of 27 monthly runs. The gap in average price and the gap in final amount are strongly linked (correlation -0.92), and every win had an average price at least 0.18% lower.
+- **They buy less often, in bigger lumps:** 28-55% (weekly) and 36-73% (monthly) of DCA's number of buys, fewer for longer SMAs.
+- **Leftover cash is small** (at most 0.07% of the final amount, except Nikkei SMA200 at 0.63-0.65%). At the end of the data the S&P 500 (SMA100 and SMA200) and both Nasdaqs (SMA200) had about 6 months of payments waiting, because they were above those SMAs.
+- **Weekly and monthly runs agree.** The DCA multiple differs by under 0.7% between them. Shanghai is the weakest case for timing.
 
-**The gaps are small**
-- Almost everything is within about 2%. The best case is +1.03% (FTSE, n = 184), roughly 0.03% a year if spread over 40 years. The worst is -4.72% (Shanghai, n = 98).
-- All indices grew 2.4x to 55x their invested money, which dwarfs these gaps.
-- Gaps within +-0.3% are noise: 6 of 27 weekly, 8 of 27 monthly. CAC 40 flips sign between weekly (-0.01%, -0.09%) and monthly (+0.16%, +0.19%) for SMA50 and SMA100. The other 25 pairs keep their sign.
+**Possible explanations (untested):** idle cash earns 2% while the market earns more, so waiting costs more the longer the SMA. A dip to a long SMA in a rising market can still be above where DCA bought months earlier. Timing may help in long sideways or falling phases (Nikkei after 1990, FTSE and CAC 40 after 2000), but Shanghai is a counter-example.
 
-**Weekly vs monthly give the same conclusions**
-- The DCA money multiple differs by under 0.7% between runs (S&P 17.18x weekly vs 17.07x monthly). Strategy gaps move by at most 0.28 points between runs.
-
-**No best SMA length**
-- Averages over the 9 indices: SMA50 loses least (-0.55% weekly, -0.46% monthly), SMA100 loses most (-1.23%, -1.16%), SMA200 is in between (-1.17%, -1.12%).
-- Best n by index: 10, 2, 200, 184, 194, 3, 94, 31, 4. Worst n: 182, 67, 158, 92, 38, 180, 197, 158, 98. There is no common length.
-
-**Shape of the curves**
-- Lengths 1-20 are close to DCA in every index (-0.48% to +0.10%, mean -0.20%).
-- For S&P, Nasdaq composite, DAX, Hang Seng and Shanghai the loss generally widens with length. DAX has a cliff from about -0.8% (141-160) to about -2.4% (161-200). Hang Seng worsens steadily to -3.35%. Shanghai is worst at 101-120 (-4.03%).
-- In four indices long lengths do best: Nasdaq-100 (181-200: +0.61%), FTSE (121-200 all positive, best +0.75%), Nikkei (181-200: +0.30%), and CAC 40 (positive up to about 120, best 81-100: +0.21%, then negative).
-- Nasdaq-100, Nikkei and FTSE have their best n at 200, 194 and 184, at the edge of the tested range. Lengths above 200 were not tested.
-
-**SMA buyers do not buy cheaper**
-- Their average purchase price was above DCA's in 20 of 27 weekly runs and 21 of 27 monthly runs. Weekly means: +0.52% (SMA50), +1.05% (SMA100), +0.69% (SMA200).
-- The gap in average price and the gap in final amount are strongly linked (correlation -0.92 in both runs).
-- Every win had an average price at least 0.18% lower than DCA's. But a lower price does not guarantee a win (monthly S&P SMA100: price -0.18%, final -0.87%).
-- Biggest price penalties: Shanghai (+1.4%, +4.4%, +2.9%) and DAX SMA200 (+3.25%).
-
-**SMA buyers buy less often, in bigger lumps**
-- Buys are 28-55% of DCA's weekly and 36-73% monthly. Means for SMA50/100/200: 48/43/37% weekly, 69/57/46% monthly. A longer SMA means fewer buys.
-
-**Leftover cash is small, but shows where markets are**
-- At most 0.07% of the final amount, except Nikkei SMA200 (0.63-0.65%), about 1.3 years of payments with no buy signal.
-- S&P (SMA100 and SMA200) and both Nasdaqs (SMA200) hold about 26 weeks (6 months) of payments. SMA50 for all three, and SMA100 for both Nasdaqs, hold about 3 weeks (1 month). Identical leftover amounts across these indices mean they last bought on the same days. These markets were above their long SMAs at the end of the data.
-
-**Sweep matches the notebook**
-- SMA50/100/200 values in the sweep equal the monthly table (for example Nasdaq-100 SMA200 +0.92%).
-
-**Shanghai is the weakest case for timing**
-- SMA50, SMA100 and SMA200 each lose between 1.5% and 4.6%, and Shanghai has the lowest DCA multiple (2.4x).
-
-### 7.7 Possible explanations (untested)
-
-- **Waiting costs market returns.** Idle cash earns 2%, while the index earns more. The cost grows with SMA length because cash waits longer.
-- **Dips are not cheap in rising markets.** A fall to a long SMA can still sit above where DCA bought months earlier, which explains the higher average prices.
-- **Timing may help in long sideways or falling phases** (for example Nikkei after 1990, FTSE and CAC after 2000, Nasdaq-100 after 2000). This is untested, and Shanghai is a counter-example.
-- **Assumptions matter most for FTSE (4% yield), CAC 40 and Hang Seng (3% yield).** Cash earns no dividends here, so a higher placeholder yield penalizes timing more.
-- Hang Seng starts 1987-10-26, which is from memory the day it reopened after the 1987 crash, so its first purchases happen at crash prices.
-
-### 7.8 Caveats on the results
-
-- One historical path per index, with different start dates (1986 to 1998).
-- Dividend yields are placeholders, and the 2% cash rate is an assumption. Neither was varied.
-- 199 lengths are tested per index, so the best n partly reflects luck. No significance tests were run.
-- Price indices (all except DAX) ignore dividends except through the placeholder model.
-- Shanghai's 20-day data gap is unresolved.
+**Caveats:** one historical path per index with different start dates. Dividend yields are placeholders and the 2% cash rate is an assumption, and neither was varied. With 199 lengths tested per asset, the best length partly reflects luck and no significance tests were run.
 
 ---
 
-## 8. Visualizations
+## Optimal SMA per Asset
 
-### Done
+The dashboard watches one SMA length per asset. The single best length of the sweep is often one lucky point, so the curve is smoothed first:
 
-- Line charts of portfolio value over time per strategy (3x3 grid, and one figure per index from a chosen year).
-- Bar chart of final amount per strategy per index (thousands above bars, y-axis not starting at 0, so read the heights, not the proportions).
-- Sweep figures: final amount by SMA length plus 10 group-mean bars (one image per index).
+1. The sweep gives 200 final amounts per asset (SMA 1, which is DCA, to SMA 200).
+2. Each length is replaced by the average of its neighbours within `HALF` lengths (the window shrinks at the ends). The highest averaged point is the optimal SMA. Both the raw best and the averaged best are reported.
+3. `HALF` is chosen per asset by cross-validation from 4, 5, 8, 12, 20 and 30. Each point is predicted from its neighbours while it and its 3 closest neighbours on each side are hidden (neighbouring lengths give nearly the same result, so leaving them in would let the test cheat). The `HALF` with the smallest squared error wins.
+4. Each asset uses only its own curve. Nothing is pooled across assets.
+5. An optimal length of 1 means DCA, so there is no line to watch. Such assets are normally left off the dashboard.
 
-### Open ideas
+**Limit:** smoothing removes jitter between neighbouring lengths. It cannot tell whether the whole curve is luck, and no significance tests were run.
 
-Rule: compare against DCA within the same index.
-
-1. **Heatmap vs DCA:** 9 indices x SMA50/100/200, cell = % difference in final amount, diverging colors centered on 0.
-2. **Cheaper entry vs outcome (scatter):** x = % difference in `avg_price`, y = % difference in final amount, one dot per index x strategy.
-3. **Win count:** how many indices each strategy ranks first, or the average rank.
-4. **Buying behaviour:** bars of `n_buys`, leftover cash as % of final amount, money per buy.
-5. **Value relative to DCA over time:** one panel per index, one line per strategy, flat line at 1.0.
-6. **Money multiple over time:** value / total invested, showing time under water.
-7. **Cash drag over time:** cash as % of portfolio value.
-8. **Buy timeline (one index):** price and SMA with dots on purchase dates sized by amount.
-9. **Different start years:** boxplot of final amount vs DCA per strategy for start years 1986 ... 2006.
-10. **Sensitivity to assumptions:** grid of interest rate (0-5%) x dividend yield (0-4%), colored by SMA200 minus DCA.
+The results are stored in `config.py`: `OPTIMAL_N`, and `BEAT_DCA_PCT`, the share of lengths from 2 to 200 that beat DCA. The daily job does not recompute them. Rerun the sweep notebooks to refresh them.
 
 ---
 
-## 9. Next steps
+## Dashboard
 
-1. Resolve Shanghai's 20-day gap.
-2. Decide what to do with the open questions from the results: lengths above 200, and the dependence on dividend yield and cash interest.
-3. Open visualization ideas (section 8).
-4. Company cohorts (section 4).
-5. All World and EM via ETFs, with shorter windows.
+A static page on GitHub Pages (`docs/index.html`) that reads `docs/data.json`. It has one section per group of assets (Indexes and Individual stocks), each with a table and a chart. It started with the S&P 500 and ASML as test assets.
+
+- **Table:** name, last close, date, optimal SMA (band), SMA value, distance, status, days in status, and SMA 50/100/200.
+- **Status:** **Open** means the last close is at or below the optimal SMA, which is the backtest's buy rule. **Closed** means it is above. It displays the rule's state and is not an instruction to trade. In the backtest a signal on one day's close leads to a purchase at the next day's close.
+- **Distance:** the last close relative to the optimal SMA, in %.
+- **Chart (Plotly):** the close, SMA 50/100/200, the optimal SMA with a shaded band of nearby lengths, and a marker on the last close. Click a row or use the dropdown to switch.
+- **Line under the chart:** "For <asset>, X% of the SMA lengths from 2 to 200 beat dollar cost averaging."
+- **Layout:** uses up to 1,800 px on wide screens. On narrower screens the table hides its least important columns instead of scrolling (SMA 50/100/200 below 1,400 px, Date and SMA value below 1,100 px, band and days below 900 px). Colors follow the system light or dark mode, and the font is the system font (SF on Apple devices).
+- Assets that could not be updated are listed in their section.
+
+### Adding an asset
+
+1. Add `key: ticker` to a group in `GROUPS` in `config.py`, for example `"asml": "ASML"` under "Individual stocks". A new group becomes a new section of the page.
+2. Add the same key to `OPTIMAL_N` (optimal SMA length) and `BEAT_DCA_PCT` (% of lengths that beat DCA). The notebooks print both dictionaries.
+3. Optionally add a nicer name in `DISPLAY_NAMES`. Without one, the key is shown.
+
+`BAND` (default 5) sets the shaded band of nearby lengths, and `SHOW_DAYS` (default 252) the trading days on the chart.
 
 ---
 
-## 10. Earlier ideas kept for later
+## Testing
 
-- **Event study:** event = close crosses below SMA(n) for n = 50, 100, 200, with events at least 20 trading days apart. Measure forward returns after 1, 3, 6, 12 and 36 months (21, 63, 126, 252 trading days), entering at the next close. Compare with every other day (median and win rate). Possibly also how much further price falls first.
-- **ML layer (exploratory):** features at each event (distance below SMA, SMA slope, 1-year return, volatility, drawdown from high). Target is the forward 12-month return. Use time-based walk-forward validation, never random splits. There is little data, so pool assets.
-- **Robustness:** sub-periods (1987, 2000-02, 2008, 2020, 2022), block bootstrap, out-of-sample holdout (e.g. the S&P 500's 1950-1988 history), and counting how many combinations were tried (multiple testing).
-- **Other variations:** costs (0, 10, 25 bps), a T-bill series from FRED as the cash rate, USD as base currency with FX from FRED, a common window (about Oct 1988 onward) if a cross-index comparison is ever needed.
-- **Original rule families:** (A) trend filter (hold above the SMA, cash below), (B) dip buy, (C) cross-up entry. Selling was dropped, so only buying is tested.
+- Hand calculations matched exactly. An independent calendar-day implementation matched all 36 results (within 0.0003%).
+- Money conservation: with 0% interest and dividends, money spent plus leftover cash equals the money invested.
+- Blanking the last SMA value changes nothing, so there is no look-ahead. SMA(1) reproduces DCA exactly.
+- A variant that bought at the signal day's close (a look-ahead) raised DCA's return by about 0.2% with everything else equal (S&P 500: 1,590.81% to 1,594.27%). The final rules decide on the previous day's close and buy at today's close.
+- The dashboard build was checked on a synthetic price feed against a separate pandas calculation. The SMAs, distance, status and days in status matched, and an empty download, a short history and an empty last row were skipped or dropped. These were development checks and are not kept as automated tests.
+- The dashboard layout was tested at 32 screen widths from 320 to 2560 px with no horizontal scrolling.
 
 ---
 
-## 11. Limitations
+## Limitations
 
-- One historical path per index, not independent samples.
-- Dividend yields are placeholders and constant. The 2% cash rate is an assumption.
-- Free data only. There is survivorship bias in any company list built from today's tickers.
-- Price indices (all except the DAX) ignore dividends unless the dividend model is applied.
-- Results depend on the start date (hence the start-year robustness idea).
+- One historical path per asset, not independent samples. Results depend on the start date.
+- Free data only. Yahoo is unofficial, and any list of companies built from today's tickers has survivorship bias.
+- Price indexes ignore dividends except through the placeholder yields.
 - Differences below about 0.3% are not reliable.
+- The scheduled job runs on GitHub's servers, and Yahoo may block or rate-limit them. A failed run leaves the previous data in place.
+- The dashboard's optimal lengths are fixed until the sweep is rerun.
+- The notebooks use absolute paths from the author's machine.
+
+---
+
+## Ideas Not Done
+
+- A more rigorous choice of the optimal length: a spline or Gaussian-process fit instead of the neighbour average, walk-forward tests, a bootstrap of the optimum, and tests for the best of 200 (White's Reality Check, Hansen's SPA, Model Confidence Set).
+- Email alerts when an asset enters or leaves its window (designed and postponed).
+- Robustness: start-year sweep, costs, sensitivity to the interest rate and dividend yield, bootstrap.
+- An event study of what follows a cross below the SMA, and a small ML layer on those events.
+- MSCI All World and Emerging Markets through ETFs, and company cohorts chosen without hindsight.
+
+---
+
+## Tech Stack
+
+| Tool | Purpose |
+|---|---|
+| Python | Data fetching and analysis |
+| `pandas` | Data processing |
+| `yfinance` | Yahoo Finance prices |
+| `matplotlib` | Charts in the analysis |
+| HTML, CSS, JavaScript | The dashboard page (no framework, no server) |
+| Plotly.js | Interactive dashboard charts |
+| GitHub Actions | Scheduled data refresh |
+| GitHub Pages | Dashboard hosting |
+
+---
+
+## License
+
+See `LICENSE`.
