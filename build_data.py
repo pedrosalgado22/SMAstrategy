@@ -1,17 +1,17 @@
-# Downloads the prices, calculates the SMAs and saves everything the page needs in docs/data.json.
-# Run it with:  python build_data.py
-
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-
 import pandas as pd
 import yfinance as yf
-
 from config import GROUPS, OPTIMAL_N, BEAT_DCA_PCT, DISPLAY_NAMES, BAND, SHOW_DAYS
 
-output_path = Path(__file__).parent / "docs" / "data.json"
-output_path.parent.mkdir(exist_ok=True)   # create the docs folder if it does not exist
+
+
+output_data_path = Path.home() / "Documents" / "Github Repositories" / "SMAstrategy" / "docs" / "data.json"
+output_data_path.mkdir(parents=True, exist_ok=True)
+
+
+
 
 
 def to_list(series):
