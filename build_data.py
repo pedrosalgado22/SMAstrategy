@@ -7,8 +7,10 @@ from config import GROUPS, OPTIMAL_N, BEAT_DCA_PCT, DISPLAY_NAMES, BAND, SHOW_DA
 
 
 
-output_data_path = Path.home() / "Documents" / "Github Repositories" / "SMAstrategy" / "docs" / "data.json"
-output_data_path.mkdir(parents=True, exist_ok=True)
+
+output_path = Path(__file__).parent / "docs" / "data.json"   # next to this script, so it works on your PC and on GitHub
+output_path.parent.mkdir(parents=True, exist_ok=True)        # create the docs folder (the parent), not data.json itself
+
 
 
 
