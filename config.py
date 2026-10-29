@@ -1,3 +1,5 @@
+BAND = 5          
+SHOW_DAYS = 1000  # for graph
 
 GROUPS = {
     "Indexes": {
@@ -232,5 +234,3 @@ DISPLAY_NAMES = {
     "aramco": "Saudi Aramco",
 }
 
-BAND = 5          
-SHOW_DAYS = 500  

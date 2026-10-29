@@ -4,67 +4,63 @@ from pathlib import Path
 import pandas as pd
 import yfinance as yf
 from config import GROUPS, OPTIMAL_N, BEAT_DCA_PCT, DISPLAY_NAMES, BAND, SHOW_DAYS
+from zoneinfo import ZoneInfo
 
-
-
-
-output_path = Path(__file__).parent / "docs" / "data.json"   # next to this script, so it works on your PC and on GitHub
-output_path.parent.mkdir(parents=True, exist_ok=True)        # create the docs folder (the parent), not data.json itself
-
-
-
-
+output_path = Path(__file__).parent / "docs" / "data.json"   # .parent creates folder in which json goes in
+output_path.parent.mkdir(parents=True, exist_ok=True)
 
 
 def to_list(series):
-    # pandas series -> plain list. Empty values (NaN) become None, which is null in JSON.
     result = []
     for value in series:
         if pd.isna(value):
-            result.append(None)
+            result.append(None)  # Empty values (NaN) become None, which is null in JSON.
         else:
             result.append(round(float(value), 2))
     return result
 
 
-def download_prices(ticker):
-    # 5 years of daily prices: enough for a 200 day SMA plus a year of chart
-    df = yf.download(ticker, period="5y", progress=False)
+def download_prices(ticker, name):
+    df = yf.download(ticker, period="10y", progress=False) # yahoo download
+
     if df.empty:
-        raise ValueError("Yahoo returned no data")
-    df.columns = df.columns.get_level_values(0)   # keep only the first column layer, the plain names
-    df = df.dropna(subset=["Close"])              # drop days without a price
+        print(f"{name} ({ticker}) failed to download")
+
+    if df.empty: raise ValueError("No data returned") # prevent corrupt
+
+    df.columns = df.columns.get_level_values(0)   #  same as for parsing
+
+    if df["Close"].isna().any():
+        print(f"{name} ({ticker}) has missing closing prices")
+
+    df = df.dropna(subset=["Close"])              # corrupted days or days that have not finished yet
     return df
 
 
-def build_entry(name, ticker, n, beat_dca_pct):
-    df = download_prices(ticker)
-
-    low = max(1, n - BAND)
-    high = n + BAND
-    if len(df) < max(200, high):
-        raise ValueError("not enough price history")
-
-    # 1. every SMA we need: column name -> length. Calculated on all the rows we downloaded.
-    lengths = {"sma_50": 50, "sma_100": 100, "sma_200": 200,
-               "sma_n": n, "sma_low": low, "sma_high": high}
+def calculate_smas(df, lengths):
     for column, length in lengths.items():
-        df[column] = df["Close"].rolling(window=length).mean()
+        df[column] = df["Close"].rolling(window=length).mean()  # creates the sma for all distances in the dict
 
-    # 2. is the window open? Open means the close is at or below the optimal SMA (the buy rule of the backtest)
-    valid = df.dropna(subset=["sma_n"])               # only days where the optimal SMA exists
-    below = (valid["Close"] <= valid["sma_n"]).tolist()   # True on days the close was at or below it
-    is_open = below[-1]
 
-    days_in_state = 0                 # how many days in a row it has been open (or closed)
-    for value in reversed(below):     # walk back from the latest day
+def get_current_state(df):
+    below = (df["Close"] <= df["sma_n"]).tolist()   # creates bool series to list
+    is_open = below[-1] # check if window open based on last value
+
+    days_in_state = 0
+    for value in reversed(below):     # reversed since starting from the below[-1] backwards
         if value == is_open:
-            days_in_state += 1
+            days_in_state += 1  # counts days in same status either closed or open
         else:
-            break
+            break  # STOP THE COUNT!
 
-    # 3. the latest numbers, shown in the table
-    last = df.iloc[-1]
+    return is_open, days_in_state
+
+
+def build_latest(df, lengths, is_open, days_in_state):  # recieves values from above
+    # numbers table
+
+    last = df.iloc[-1] # last row
+
     latest = {
         "date": df.index[-1].strftime("%Y-%m-%d"),
         "close": round(float(last["Close"]), 2),
@@ -72,49 +68,111 @@ def build_entry(name, ticker, n, beat_dca_pct):
         "is_open": is_open,
         "days_in_state": days_in_state,
     }
-    for column in lengths:
-        latest[column] = round(float(last[column]), 2)
 
-    # 4. the last SHOW_DAYS days, drawn on the chart
-    shown = df.tail(SHOW_DAYS)
+    for column in lengths:
+        latest[column] = round(float(last[column]), 2)   # gets the sma value based on last day for all distances and places it inside dict
+        # loops cant be inside dicts
+
+    return latest
+
+
+def build_series(df, lengths):
+    # chart
+    shown = df.tail(SHOW_DAYS) # tail is opposite of head creates subset with days for graph
+
     series = {
-        "dates": shown.index.strftime("%Y-%m-%d").tolist(),
+        "dates": shown.index.strftime("%Y-%m-%d").tolist(), # converts index which will be dates to strings to list
         "close": to_list(shown["Close"]),
     }
+
     for column in lengths:
-        series[column] = to_list(shown[column])
+        series[column] = to_list(shown[column])  # converts all sma values already computed above to a list
 
-    return {"name": name, "ticker": ticker, "n": n, "low_n": low, "high_n": high,
-            "beat_dca_pct": beat_dca_pct, "latest": latest, "series": series}
+    return series
 
 
-groups = []
-total_entries = 0
-for title, tickers in GROUPS.items():
-    entries = []
-    skipped = []   # tickers that failed, shown as a note on the page
-    for key, ticker in tickers.items():
-        name = DISPLAY_NAMES.get(key, key)   # the name shown on the page
-        if key not in OPTIMAL_N:
-            skipped.append(f"{name} (no optimal n in config.py)")
-            print("skipped", name, "- no optimal n in config.py")
-            continue
-        try:
-            entries.append(build_entry(name, ticker, OPTIMAL_N[key], BEAT_DCA_PCT.get(key)))
-            print("ok     ", name)
-        except Exception as error:   # one bad ticker should not stop the others
-            skipped.append(f"{name} ({error})")
-            print("skipped", name, "-", error)
-    groups.append({"title": title, "entries": entries, "skipped": skipped})
-    total_entries += len(entries)
+def build_entry(name, ticker, opt_SMA, beat_dca_pct): # putting evberything together
+    df = download_prices(ticker, name)
 
-if total_entries == 0:
-    raise SystemExit("Nothing was downloaded, so data.json was not changed.")
+    low = max(1, opt_SMA - BAND)  # creating a band 
+    high = opt_SMA + BAND
 
-output = {
-    "updated": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
-    "groups": groups,
-}
-with open(output_path, "w") as file:
-    json.dump(output, file, allow_nan=False)   # allow_nan=False: crash instead of writing broken JSON
-print("saved", output_path)
+    if len(df) < 200:
+        raise ValueError("not enough price history, at least 200 rows are needed for the SMA calculations. Only include stocks with a 200 market day history.")
+
+    lengths = {
+        "sma_50": 50,
+        "sma_100": 100,
+        "sma_200": 200,
+        "sma_n": opt_SMA,
+        "sma_low": low,
+        "sma_high": high
+    }
+
+    calculate_smas(df, lengths)
+
+    is_open, days_in_state = get_current_state(df)
+    latest = build_latest(df, lengths, is_open, days_in_state)
+    series = build_series(df, lengths)
+
+    return {
+        "name": name,
+        "ticker": ticker,
+        "opt_SMA": opt_SMA,
+        "low_n": low,
+        "high_n": high,
+        "beat_dca_pct": beat_dca_pct,
+        "latest": latest,
+        "series": series
+    }
+
+
+def build_group():  # divides into indexes and stocks for the dash
+    groups = []
+
+    for title, tickers in GROUPS.items(): # for "Indexes", "sp500":"^GSPC",
+
+        entries = []
+        skipped = []
+
+        for key, ticker in tickers.items():  # for "sp500": "^GSPC" in ticket dict
+            if key in DISPLAY_NAMES:  # if sp500 in the display names dict
+                name = DISPLAY_NAMES[key] # name is its corresponding
+            else:
+                name = key   # name is sp500
+
+            if key not in OPTIMAL_N: # if sp500 does not have an optimal dca attribuited in the dict
+                skipped.append(f"{name} no optimal opt_SMA in config.py") # append to corrupted list
+                print("skipped", name, " no optimal opt_SMA in config.py") # warn
+                continue  # if one stock sma is not avaliable it proceeds to others
+
+            elif key not in BEAT_DCA_PCT:  # same for pct dca
+                skipped.append(f"{name} no  BEAT_DCA_PCT in config.py")
+                print("skipped", name, " no  BEAT_DCA_PCT in config.py")
+                continue  # if one stock sma is not avaliable it proceeds to others
+
+            # checks if dictionaries have the needed data else itll alert that some smas are missing,
+
+            entry = build_entry(name, ticker, OPTIMAL_N[key], BEAT_DCA_PCT[key])
+            entries.append(entry)
+            print(f"{name} added")
+
+        groups.append({"title": title, "entries": entries})
+
+    return groups
+
+
+def save_data(groups):
+    output = {
+        "updated": datetime.now(ZoneInfo("Europe/Lisbon")).strftime("%Y-%m-%d %H:%M Lisbon/London time"), 
+        "groups": groups,
+    }
+
+    with open(output_path, "w") as file:
+        json.dump(output, file, allow_nan=False)   # crash instead of writing broken JSON
+
+    print("saved", output_path)
+
+
+groups = build_group()
+save_data(groups)
