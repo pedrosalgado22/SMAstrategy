@@ -92,6 +92,9 @@ def build_series(df, lengths):
 
 
 def build_entry(name, ticker, n, beat_dca_pct): # putting evberything together
+
+    if n == 1:
+        n = 2  # optimal sma cannot be 1 that is not an sma provides no info
     df = download_prices(ticker, name)
 
     low = max(1, n - BAND)  # creating a band 
