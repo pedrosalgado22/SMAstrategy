@@ -91,11 +91,11 @@ def build_series(df, lengths):
     return series
 
 
-def build_entry(name, ticker, opt_SMA, beat_dca_pct): # putting evberything together
+def build_entry(name, ticker, n, beat_dca_pct): # putting evberything together
     df = download_prices(ticker, name)
 
-    low = max(1, opt_SMA - BAND)  # creating a band 
-    high = opt_SMA + BAND
+    low = max(1, n - BAND)  # creating a band 
+    high = n + BAND
 
     if len(df) < 200:
         raise ValueError("not enough price history, at least 200 rows are needed for the SMA calculations. Only include stocks with a 200 market day history.")
@@ -104,7 +104,7 @@ def build_entry(name, ticker, opt_SMA, beat_dca_pct): # putting evberything toge
         "sma_50": 50,
         "sma_100": 100,
         "sma_200": 200,
-        "sma_n": opt_SMA,
+        "sma_n": n,
         "sma_low": low,
         "sma_high": high
     }
@@ -118,7 +118,7 @@ def build_entry(name, ticker, opt_SMA, beat_dca_pct): # putting evberything toge
     return {
         "name": name,
         "ticker": ticker,
-        "opt_SMA": opt_SMA,
+        "n": n,
         "low_n": low,
         "high_n": high,
         "beat_dca_pct": beat_dca_pct,
@@ -142,8 +142,8 @@ def build_group():  # divides into indexes and stocks for the dash
                 name = key   # name is sp500
 
             if key not in OPTIMAL_N: # if sp500 does not have an optimal dca attribuited in the dict
-                skipped.append(f"{name} no optimal opt_SMA in config.py") # append to corrupted list
-                print("skipped", name, " no optimal opt_SMA in config.py") # warn
+                skipped.append(f"{name} no optimal n in config.py") # append to corrupted list
+                print("skipped", name, " no optimal n in config.py") # warn
                 continue  # if one stock sma is not avaliable it proceeds to others
 
             elif key not in BEAT_DCA_PCT:  # same for pct dca
@@ -157,7 +157,7 @@ def build_group():  # divides into indexes and stocks for the dash
             entries.append(entry)
             print(f"{name} added")
 
-        groups.append({"title": title, "entries": entries})
+        groups.append({"title": title, "entries": entries, "skipped": skipped})
 
     return groups
 
