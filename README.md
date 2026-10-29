@@ -217,20 +217,27 @@ A scheduled GitHub Actions workflow keeps the dashboard updated everyday on week
 - The scheduled job runs on GitHub's servers, and Yahoo may block or rate-limit them. A failed run leaves the previous data in place.
 - Including MSCI All World and Emerging Markets ETFs.
 
+---
 
-
-# Other Visualizations and Tables 
+## Other Visualizations and Tables 
 
 <img width="1789" height="1590" alt="image" src="https://github.com/user-attachments/assets/95e1f2ec-a0ef-4d36-9cd2-265cf2f8b1ea" />
 
+---
+
 <img width="1789" height="1589" alt="image" src="https://github.com/user-attachments/assets/2b3ffa52-1a2f-437b-8ac4-4d0649058ff4" />
+
+---
 
 <img width="1790" height="1590" alt="image" src="https://github.com/user-attachments/assets/8259a7cd-c678-4e4a-8d19-b6ec24889289" />
 
+---
 <img width="1789" height="5190" alt="image" src="https://github.com/user-attachments/assets/bf57a7d8-2cd5-4b8c-85c6-317d8b8f662d" />
 
-
+---
 <img width="1790" height="5189" alt="image" src="https://github.com/user-attachments/assets/7fa80645-b0db-4e0a-ac8f-c56136cac345" />
+
+---
 
 <img width="1784" height="5189" alt="image" src="https://github.com/user-attachments/assets/45923848-4765-40d8-986a-c0ea5f9d4dad" />
 
