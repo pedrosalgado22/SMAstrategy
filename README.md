@@ -169,7 +169,11 @@ The single best length will often be one lucky point, so the curve of 200 final 
 - All three are local weighted averages of neighbouring lengths. They differ in the weights and in the local fit.
 - Settings chosen by cross-validation. Each length is predicted from the others with itself and its 3 closest lengths on each side hidden. The score is the mean of `(prediction - y)^2` and the smallest score wins.
 
+<<<<<<< HEAD
 ## What the results show
+=======
+### What the results show
+>>>>>>> ed1f2a493833ce4e0cafd4515eb79417beb9bc0f
 
 - Share of lengths beating DCA is 1.5% for the median index (8 of 12 indexes are at 2% or less) and 8% for the median company (14 of 39 at 2% or less). For the Nasdaq Composite, FTSE 100, Shanghai Composite, Apple, Nvidia, Oracle, Cisco, Nokia, Tencent and ASML, none of the 199 lengths beat DCA.
 - **Exceptions.** More than half of the lengths beat DCA for Euro Stoxx 50 (91%), Saudi Aramco (77%) (small sample size), Toyota (58%), Alibaba (57%) and CAC 40 (52%), with Costco at 50%. Strongly rising assets (Apple, Nvidia, Microsoft, Meta, Tesla) sit at or near 0%.
