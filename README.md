@@ -180,16 +180,16 @@ The single best length will often be one lucky point, so the curve of 200 final 
 
 ## Significance: White's Reality Check
 
-Although DCA looked like the best strategy overall throughout everything, there were instances that seemed to show SMA advantageous patterns.
+Although DCA looked like the best strategy overall throughout everything, there were instances in particular holdings that seemed to show some advantageous SMA patterns.
 
-I wanted to test for their statistical significance and see if results were enough to state that a clear trend has been happening in past performances. White’s Reality Check is a statistical test that accounts for testing many strategies and then selecting the best one. It compares the strategies against DCA and uses 1,000 bootstrap simulations, resampling returns in blocks, to estimate a p-value while accounting for the search across strategies.
+I wanted to test for their statistical significance and see if results were enough to state that a clear trend has been happening in past performances. White’s Reality Check is a statistical test that accounts for testing many strategies, then selecting the best one. It compares the strategies against DCA and uses 1,000 bootstrap simulations, resampling returns in blocks, to estimate a p-value while accounting for the search across strategies.
 
 - Test: Compare each SMA against DCA, accounting for the search across 199 alternatives. Repeat the same test for bins of 5, 10 and 20 SMA lengths.
 - Bootstrap: Resample returns in blocks 1,000 times to account for dependence over time.
 - Significance: A p-value below 0.05 is statistically significant.
 
 
-Result: NONE of our tests was significant. No SMA or bin. There is insufficient statistical evidence that any SMA or bin has outperformed DCA.
+Result: NONE of our tests was significant. No SMA or bin. There is insufficient statistical evidence that any SMA or bin has outperformed DCA for any of the assets analyzed.
 
 
 ## Dashboard
@@ -198,12 +198,15 @@ The dashboard is a static page that shows, for each asset, where the price stand
 
 **How the findings feed it**
 - **Optimal SMA:** the length per asset comes from the smoothed sweep curve (cross-validated average, kernel and LOESS), stored in `config.py`.
-- **Status:** Open means the close is at or below the optimal SMA, which is the backtest's buy rule. It shows the rule's state, not a recommendation.
+- **Status:** Open means the close is at or below the optimal SMA, which is the backtest's buy rule. It shows the rule's state based on the findings made, not a recommendation or prediction of future performances.
 
 [**Live dashboard**](https://pedrosalgado22.github.io/SMAstrategy/)
 
 
 A scheduled GitHub Actions workflow keeps the dashboard updated everyday on weekdays at 23:00 Lisbon time, after the main markets have closed for all companies/indexes present.
+
+<img width="1334" height="1030" alt="Screenshot_20261030_095251" src="https://github.com/user-attachments/assets/eefe732c-f194-41e1-8e02-7e9f6ab3ebc2" />
+
 
 
 ---
