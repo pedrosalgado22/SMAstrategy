@@ -141,10 +141,10 @@ Source: Yahoo Finance. The final run ends on 2026-10-20.
 ---
 
 
-- Almost all companies show DCA as the best strategy, either as the optimal purchase time or as a small difference in the final value when compared to the optimal bin.
-- By results, when companies have shown better performing strategies than DCA, it's by a little (2 pp max), similar to indexes. However, when other strategies lose to DCA, they lose by a lot. This displays the unfairness of this simulation towards individual companies and SMAs, since individual stocks do not usually fall into the long term holding passive investments that the simulation analyses, as good performing companies fall into longer term SMAs territory much less often and anyone DCA-ing their salary into Apple since the beginning of the company's public listed history is obviously going to do fairly well.
+- Almost all companies show DCA as the best strategy, either as the optimal purchase time or very close to it when compared to the optimal bin.
+- By results, when companies have shown better performing strategies than DCA, it's by a little (2 pp max), similar to indexes. However, when other strategies lose to DCA, they lose by a lot. This displays the unfair penalization of this simulation towards individual companies and SMA windows, since individual stocks do not usually fall into the long term holding passive investments that the simulation analyses, as good performing companies fall into longer term SMAs territory much less often and anyone DCA-ing their salary into Apple since the beginning of the company's public listed history is obviously going to do fairly well.
 - Unsurprisingly, a lot of the hindsight winners in the S&P show a very strong advantage to DCA and holding.
-- Amazon and Google show the most interesting nuances as the only two Mag-7 companies that don't have an early optimal SMA and a very clear downward trend for longer SMAs.
+- Amazon and Google show the most interesting nuances as the only two Mag-7 companies that don't have an early optimal SMA and a very clear downward trend starting immediately in the first bins, with both hitting their optimums around the 70s mark.
 
 ---
 
@@ -169,17 +169,14 @@ The single best length will often be one lucky point, so the curve of 200 final 
 - All three are local weighted averages of neighbouring lengths. They differ in the weights and in the local fit.
 - Settings chosen by cross-validation. Each length is predicted from the others with itself and its 3 closest lengths on each side hidden. The score is the mean of `(prediction - y)^2` and the smallest score wins.
 
-<<<<<<< HEAD
 ## What the results show
-=======
-### What the results show
->>>>>>> ed1f2a493833ce4e0cafd4515eb79417beb9bc0f
 
 - Share of lengths beating DCA is 1.5% for the median index (8 of 12 indexes are at 2% or less) and 8% for the median company (14 of 39 at 2% or less). For the Nasdaq Composite, FTSE 100, Shanghai Composite, Apple, Nvidia, Oracle, Cisco, Nokia, Tencent and ASML, none of the 199 lengths beat DCA.
-- **Exceptions.** More than half of the lengths beat DCA for Euro Stoxx 50 (91%), Saudi Aramco (77%) (small sample size), Toyota (58%), Alibaba (57%) and CAC 40 (52%), with Costco at 50%. Strongly rising assets (Apple, Nvidia, Microsoft, Meta, Tesla) sit at or near 0%.
+- More than half of the lengths beat DCA for Euro Stoxx 50 (91%), Saudi Aramco (77%) (small sample size), Toyota (58%), Alibaba (57%) and CAC 40 (52%), with Costco at 50%. Strongly rising assets (Apple, Nvidia, Microsoft, Meta, Tesla) sit at or near 0%.
 - Cross-validation chose the smallest setting almost everywhere (average 4, kernel 2, LOESS 0.05), so the smoothed optimum is usually within a few lengths of the raw best. The exceptions are Mastercard (58 to 71-72), IBM (111 to 84-85), Boeing (11 to 62), Cisco (1 to 21-22), Samsung (89 to 100-101), Aramco (116 to 118-151), and Oracle (1 to 12, average only) and Tencent (1 to 19, kernel only).
 - SMA buyers do not buy cheaper, as the gap in average price and the gap in final amount are strongly linked , and every win had a lower average price.
 - Idle cash earns 3% while the market earns more, so waiting costs more the longer the SMA. A dip to a long SMA in a rising market can still be above where DCA bought months earlier. Timing may help in long sideways or falling phases (Nikkei after 1990, FTSE and CAC 40 after 2000), but Shanghai is a counter-example.
+
 
 ## Significance: White's Reality Check
 
